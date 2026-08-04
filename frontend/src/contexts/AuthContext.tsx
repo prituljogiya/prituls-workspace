@@ -71,6 +71,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = async (email: string, password: string) => {
     try {
+      // Drop previous session caches so the next dashboard isn't stale
+      try {
+        const keys: string[] = [];
+        for (let i = 0; i < sessionStorage.length; i++) {
+          const k = sessionStorage.key(i);
+          if (k?.startsWith('pms:')) keys.push(k);
+        }
+        keys.forEach((k) => sessionStorage.removeItem(k));
+      } catch {
+        /* ignore */
+      }
+
       const response = await api.post('/auth/login', { email, password });
       const { user, token } = response.data;
       setUser(user);
@@ -102,6 +114,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setToken(null);
     localStorage.removeItem('token');
     localStorage.removeItem('user');
+    try {
+      const keys: string[] = [];
+      for (let i = 0; i < sessionStorage.length; i++) {
+        const k = sessionStorage.key(i);
+        if (k?.startsWith('pms:')) keys.push(k);
+      }
+      keys.forEach((k) => sessionStorage.removeItem(k));
+    } catch {
+      /* ignore */
+    }
   };
 
   return (

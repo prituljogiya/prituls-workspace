@@ -178,7 +178,7 @@ router.get('/', authenticate, async (req: AuthRequest, res) => {
       };
     });
 
-    res.setHeader('Cache-Control', 'private, max-age=15');
+    res.setHeader('Cache-Control', 'private, no-store');
     res.json({
       projects,
       stats: {

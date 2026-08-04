@@ -38,7 +38,8 @@ export default function LoginPage() {
       setLoading(true);
       setError('');
       await login(data.email, data.password);
-      router.push('/dashboard');
+      router.replace('/dashboard');
+      router.refresh();
     } catch (err: any) {
       const errorMessage =
         err.message ||

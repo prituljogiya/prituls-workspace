@@ -69,18 +69,24 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!authLoading && !user) {
+      setData(null);
       router.push('/login');
       return;
     }
 
     if (user) {
+      setLoading(true);
+      setData(null);
       fetchDashboard();
     }
-  }, [user, authLoading, router]);
+  }, [user?.id, authLoading, router]);
 
   const fetchDashboard = async () => {
     try {
-      const response = await api.get('/dashboard');
+      const response = await api.get('/dashboard', {
+        headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
+        params: { _u: user?.id },
+      });
       setData(response.data);
     } catch (error) {
       console.error('Failed to fetch dashboard:', error);
