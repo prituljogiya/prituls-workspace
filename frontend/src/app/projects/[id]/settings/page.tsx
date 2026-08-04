@@ -7,6 +7,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import api from '@/lib/api';
 import { Layout } from '@/components/Layout';
 import { RoleGuard } from '@/components/RoleGuard';
+import { canManageInvoices } from '@/utils/rbac';
 import { Save, Archive, Users } from 'lucide-react';
 
 function getProjectId(params: ReturnType<typeof useParams>): string | undefined {
@@ -72,7 +73,16 @@ export default function ProjectSettingsPage() {
     if (!projectId) return;
     try {
       setSaving(true);
-      await api.patch(`/projects/${projectId}`, formData);
+      const payload: Record<string, unknown> = {
+        name: formData.name,
+        description: formData.description,
+        color: formData.color,
+      };
+      // Only Super Admin can show/hide the Invoices module
+      if (user?.role && canManageInvoices(user.role)) {
+        payload.invoicesEnabled = formData.invoicesEnabled;
+      }
+      await api.patch(`/projects/${projectId}`, payload);
       alert('Project updated successfully!');
       fetchProject(projectId);
     } catch (error: any) {
@@ -162,31 +172,33 @@ export default function ProjectSettingsPage() {
                     className="h-10 w-20 border border-gray-300 dark:border-gray-600 rounded-lg"
                   />
                 </div>
-                <div className="flex items-start justify-between gap-4 p-4 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900/40">
-                  <div>
-                    <p className="text-sm font-medium text-gray-900 dark:text-white">Invoices module</p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                      When enabled, Super Admin can generate invoices. Viewers can see rates, completed hours, and download PDFs.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={formData.invoicesEnabled}
-                    onClick={() =>
-                      setFormData({ ...formData, invoicesEnabled: !formData.invoicesEnabled })
-                    }
-                    className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
-                      formData.invoicesEnabled ? 'bg-primary-600' : 'bg-gray-300 dark:bg-gray-600'
-                    }`}
-                  >
-                    <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${
-                        formData.invoicesEnabled ? 'translate-x-6' : 'translate-x-1'
+                <RoleGuard allowedRoles={['SUPER_ADMIN']}>
+                  <div className="flex items-start justify-between gap-4 p-4 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900/40">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900 dark:text-white">Invoices module</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        Off by default. Turn on only when you want Invoices in the sidebar. Viewers then see rates, completed hours, and can download PDFs — only you can generate.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={formData.invoicesEnabled}
+                      onClick={() =>
+                        setFormData({ ...formData, invoicesEnabled: !formData.invoicesEnabled })
+                      }
+                      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
+                        formData.invoicesEnabled ? 'bg-primary-600' : 'bg-gray-300 dark:bg-gray-600'
                       }`}
-                    />
-                  </button>
-                </div>
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${
+                          formData.invoicesEnabled ? 'translate-x-6' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                  </div>
+                </RoleGuard>
                 <RoleGuard allowedRoles={['SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER']}>
                   <button
                     onClick={handleSave}

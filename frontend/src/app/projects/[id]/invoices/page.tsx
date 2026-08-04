@@ -250,7 +250,7 @@ export default function InvoicesPage() {
               <FileText className="h-12 w-12 mx-auto mb-3 opacity-50" />
               <p className="font-medium text-gray-900 dark:text-white">Invoices module is off</p>
               <p className="text-sm mt-1">
-                Enable it in Project Settings → Invoices module, then Save.
+                Ask a Super Admin to enable it in Project Settings → Invoices module.
               </p>
             </div>
           ) : (

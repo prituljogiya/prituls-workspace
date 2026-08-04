@@ -185,6 +185,7 @@ router.patch(
   async (req: AuthRequest, res) => {
     try {
       const { name, description, color, invoicesEnabled } = req.body;
+      const isSuperAdmin = req.user?.role === 'SUPER_ADMIN';
 
       const project = await prisma.project.update({
         where: { id: req.params.id },
@@ -192,7 +193,8 @@ router.patch(
           ...(name !== undefined ? { name } : {}),
           ...(description !== undefined ? { description } : {}),
           ...(color !== undefined ? { color } : {}),
-          ...(typeof invoicesEnabled === 'boolean' ? { invoicesEnabled } : {}),
+          // Only Super Admin can show/hide Invoices for a project
+          ...(isSuperAdmin && typeof invoicesEnabled === 'boolean' ? { invoicesEnabled } : {}),
         },
         include: {
           workspace: true,
