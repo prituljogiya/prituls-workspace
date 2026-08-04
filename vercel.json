@@ -23,11 +23,5 @@
     { "source": "/api/:path*", "destination": "/api" },
     { "source": "/", "destination": "/frontend" },
     { "source": "/:path*", "destination": "/frontend/:path*" }
-  ],
-  "crons": [
-    {
-      "path": "/api/health",
-      "schedule": "0 */6 * * *"
-    }
   ]
 }
