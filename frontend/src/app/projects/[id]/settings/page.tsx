@@ -28,6 +28,7 @@ export default function ProjectSettingsPage() {
     name: '',
     description: '',
     color: '#6366f1',
+    invoicesEnabled: false,
   });
 
   const fetchProject = useCallback(async (id: string) => {
@@ -40,6 +41,7 @@ export default function ProjectSettingsPage() {
         name: proj.name,
         description: proj.description || '',
         color: proj.color || '#6366f1',
+        invoicesEnabled: !!proj.invoicesEnabled,
       });
     } catch (error) {
       console.error('Failed to fetch project:', error);
@@ -159,6 +161,31 @@ export default function ProjectSettingsPage() {
                     onChange={(e) => setFormData({ ...formData, color: e.target.value })}
                     className="h-10 w-20 border border-gray-300 dark:border-gray-600 rounded-lg"
                   />
+                </div>
+                <div className="flex items-start justify-between gap-4 p-4 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900/40">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900 dark:text-white">Invoices module</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      When enabled, Super Admin can generate invoices. Viewers can see rates, completed hours, and download PDFs.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={formData.invoicesEnabled}
+                    onClick={() =>
+                      setFormData({ ...formData, invoicesEnabled: !formData.invoicesEnabled })
+                    }
+                    className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
+                      formData.invoicesEnabled ? 'bg-primary-600' : 'bg-gray-300 dark:bg-gray-600'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${
+                        formData.invoicesEnabled ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
                 </div>
                 <RoleGuard allowedRoles={['SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER']}>
                   <button

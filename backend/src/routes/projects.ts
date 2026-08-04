@@ -184,14 +184,15 @@ router.patch(
   authorize('SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER'),
   async (req: AuthRequest, res) => {
     try {
-      const { name, description, color } = req.body;
+      const { name, description, color, invoicesEnabled } = req.body;
 
       const project = await prisma.project.update({
         where: { id: req.params.id },
         data: {
-          name,
-          description,
-          color,
+          ...(name !== undefined ? { name } : {}),
+          ...(description !== undefined ? { description } : {}),
+          ...(color !== undefined ? { color } : {}),
+          ...(typeof invoicesEnabled === 'boolean' ? { invoicesEnabled } : {}),
         },
         include: {
           workspace: true,

@@ -8,6 +8,7 @@ import { Layout } from '@/components/Layout';
 import { FileText, Plus, Download, Calendar, Rocket } from 'lucide-react';
 import { format } from 'date-fns';
 import { RoleGuard } from '@/components/RoleGuard';
+import { canManageInvoices, canViewInvoices } from '@/utils/rbac';
 
 export default function InvoicesPage() {
   const router = useRouter();
@@ -15,6 +16,8 @@ export default function InvoicesPage() {
   const { user, loading: authLoading } = useAuth();
   const [invoices, setInvoices] = useState<any[]>([]);
   const [sprints, setSprints] = useState<any[]>([]);
+  const [summary, setSummary] = useState<any>(null);
+  const [moduleDisabled, setModuleDisabled] = useState(false);
   const [loading, setLoading] = useState(true);
   const [showGenerate, setShowGenerate] = useState(false);
   const [preview, setPreview] = useState<any>(null);
@@ -33,30 +36,46 @@ export default function InvoicesPage() {
   });
   const [openingPdfId, setOpeningPdfId] = useState<string | null>(null);
 
+  const isViewer = user?.role === 'VIEWER';
+  const canManage = user?.role ? canManageInvoices(user.role) : false;
+
   useEffect(() => {
     if (!authLoading && !user) {
       router.push('/login');
       return;
     }
-    if (user && user.role !== 'SUPER_ADMIN') {
+    if (user && !canViewInvoices(user.role)) {
       router.replace(`/projects/${params.id}`);
       return;
     }
     if (user && params.id) {
-      fetchInvoices();
-      fetchSprints();
+      loadPage();
+      if (canManageInvoices(user.role)) {
+        fetchSprints();
+      }
     }
   }, [user, authLoading, params.id, router]);
 
-  const fetchInvoices = async () => {
+  const loadPage = async () => {
     try {
-      const response = await api.get(`/invoices/project/${params.id}`);
-      setInvoices(response.data.invoices || []);
-    } catch (error) {
-      console.error('Failed to fetch invoices:', error);
+      setModuleDisabled(false);
+      const summaryRes = await api.get(`/invoices/project/${params.id}/summary`);
+      setSummary(summaryRes.data);
+      setInvoices(summaryRes.data.invoices || []);
+    } catch (error: any) {
+      console.error('Failed to fetch invoice summary:', error);
+      if (error.response?.status === 403) {
+        setModuleDisabled(true);
+        setSummary(null);
+        setInvoices([]);
+      }
     } finally {
       setLoading(false);
     }
+  };
+
+  const fetchInvoices = async () => {
+    await loadPage();
   };
 
   const fetchSprints = async () => {
@@ -205,27 +224,102 @@ export default function InvoicesPage() {
             <div>
               <h1 className="text-2xl font-semibold text-gray-900 dark:text-white mb-2">Invoices</h1>
               <p className="text-sm text-gray-600 dark:text-gray-400">
-                Super Admin — generate invoices from a date range or a sprint’s logged time
+                {isViewer
+                  ? 'View rates, completed hours, and download generated invoice PDFs'
+                  : 'Generate invoices from a date range or a sprint’s logged time'}
               </p>
             </div>
-            <RoleGuard allowedRoles={['SUPER_ADMIN']}>
-              <button
-                onClick={() => {
-                  setPreview(null);
-                  setShowGenerate(true);
-                }}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 text-sm font-medium"
-              >
-                <Plus className="h-4 w-4" />
-                Generate Invoice
-              </button>
-            </RoleGuard>
+            {canManage && !moduleDisabled && (
+              <RoleGuard allowedRoles={['SUPER_ADMIN']}>
+                <button
+                  onClick={() => {
+                    setPreview(null);
+                    setShowGenerate(true);
+                  }}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 text-sm font-medium"
+                >
+                  <Plus className="h-4 w-4" />
+                  Generate Invoice
+                </button>
+              </RoleGuard>
+            )}
           </div>
+
+          {moduleDisabled ? (
+            <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-8 text-center text-gray-600 dark:text-gray-400">
+              <FileText className="h-12 w-12 mx-auto mb-3 opacity-50" />
+              <p className="font-medium text-gray-900 dark:text-white">Invoices module is off</p>
+              <p className="text-sm mt-1">
+                Enable it in Project Settings → Invoices module, then Save.
+              </p>
+            </div>
+          ) : (
+            <>
+              {/* Rates + completed hours (especially for VIEWER) */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+                <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
+                  <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+                    <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide">
+                      Hourly rates
+                    </h2>
+                  </div>
+                  <div className="divide-y divide-gray-200 dark:divide-gray-700">
+                    {(summary?.rates || []).length === 0 ? (
+                      <p className="p-4 text-sm text-gray-500 dark:text-gray-400">No rates configured.</p>
+                    ) : (
+                      summary.rates.map((r: any, idx: number) => (
+                        <div key={idx} className="px-4 py-3 flex justify-between text-sm">
+                          <span className="text-gray-900 dark:text-white">
+                            {r.user?.firstName} {r.user?.lastName}
+                          </span>
+                          <span className="font-medium text-gray-700 dark:text-gray-300">
+                            {r.currency} {Number(r.rate).toFixed(2)}/hr
+                          </span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+                <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
+                  <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+                    <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide">
+                      Hours completed
+                    </h2>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                      {summary?.completedTasks ?? 0} done tasks · {summary?.totalHours?.toFixed?.(2) ?? '0.00'}h total logged
+                    </p>
+                  </div>
+                  <div className="divide-y divide-gray-200 dark:divide-gray-700">
+                    {(summary?.hoursBreakdown || []).length === 0 ? (
+                      <p className="p-4 text-sm text-gray-500 dark:text-gray-400">No time logged yet.</p>
+                    ) : (
+                      summary.hoursBreakdown.map((row: any) => (
+                        <div key={row.user.id} className="px-4 py-3 text-sm">
+                          <div className="flex justify-between text-gray-900 dark:text-white">
+                            <span>
+                              {row.user.firstName} {row.user.lastName}
+                            </span>
+                            <span className="font-medium">{row.completedTaskHours.toFixed(2)}h done</span>
+                          </div>
+                          <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                            <span>{row.totalHours.toFixed(2)}h logged total</span>
+                            <span>
+                              {row.rate
+                                ? `${row.rate.currency} ${Number(row.rate.rate).toFixed(2)}/hr`
+                                : 'No rate'}
+                            </span>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
 
           <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
             <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
               <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide">
-                All Invoices
+                Generated invoices &amp; PDFs
               </h2>
             </div>
             <div className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -284,10 +378,12 @@ export default function InvoicesPage() {
               )}
             </div>
           </div>
+            </>
+          )}
         </div>
       </div>
 
-      {showGenerate && (
+      {showGenerate && canManage && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-2xl border border-gray-200 dark:border-gray-700 max-h-[90vh] overflow-y-auto">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">Generate Invoice</h2>

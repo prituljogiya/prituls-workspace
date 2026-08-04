@@ -100,3 +100,13 @@ export const canApproveTimeDeletion = (userRole: string): boolean => {
 export const canHardDeleteTime = (userRole: string): boolean => {
   return canApproveTimeDeletion(userRole);
 };
+
+/** Invoices module — full manage (generate) */
+export const canManageInvoices = (userRole: string): boolean => {
+  return hasRole(userRole, ['SUPER_ADMIN']);
+};
+
+/** Invoices module — view rates/hours/PDFs when project has invoices enabled */
+export const canViewInvoices = (userRole: string): boolean => {
+  return hasRole(userRole, ['SUPER_ADMIN', 'VIEWER', 'WORKSPACE_OWNER', 'PROJECT_MANAGER']);
+};

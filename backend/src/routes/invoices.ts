@@ -8,9 +8,167 @@ import path from 'path';
 
 const router = express.Router();
 
+async function assertInvoiceModuleAccess(
+  projectId: string,
+  user: { id?: string; role?: string } | undefined,
+  opts: { allowViewer?: boolean } = { allowViewer: true }
+) {
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    select: { id: true, invoicesEnabled: true },
+  });
+  if (!project) {
+    return { error: 'Project not found', status: 404 as const };
+  }
+  if (!project.invoicesEnabled) {
+    return { error: 'Invoices module is disabled for this project', status: 403 as const };
+  }
+  const role = user?.role;
+  if (role === 'SUPER_ADMIN') {
+    return { project };
+  }
+  if (opts.allowViewer && role === 'VIEWER') {
+    return { project, viewerOnly: true as const };
+  }
+  // Other roles: read list/PDF if enabled; generate stays SUPER_ADMIN-gated on those routes
+  if (role === 'WORKSPACE_OWNER' || role === 'PROJECT_MANAGER' || role === 'TEAM_MEMBER') {
+    return { project };
+  }
+  return { error: 'Not authorized for invoices', status: 403 as const };
+}
+
+// Viewer / shared summary: rates, completed hours, generated invoices
+router.get('/project/:projectId/summary', authenticate, async (req: AuthRequest, res) => {
+  try {
+    const access = await assertInvoiceModuleAccess(req.params.projectId, req.user, {
+      allowViewer: true,
+    });
+    if ('error' in access && access.error) {
+      return res.status(access.status).json({ error: access.error });
+    }
+
+    const projectId = req.params.projectId;
+
+    const [rates, entries, invoices, doneTasks] = await Promise.all([
+      prisma.hourlyRate.findMany({
+        where: {
+          OR: [{ projectId }, { projectId: null }],
+        },
+        include: {
+          user: {
+            select: { id: true, firstName: true, lastName: true, email: true },
+          },
+        },
+        orderBy: { effectiveFrom: 'desc' },
+      }),
+      prisma.timeEntry.findMany({
+        where: { projectId },
+        include: {
+          user: {
+            select: { id: true, firstName: true, lastName: true, email: true },
+          },
+          task: { select: { id: true, title: true, status: true } },
+        },
+      }),
+      prisma.invoice.findMany({
+        where: { projectId },
+        include: {
+          items: { orderBy: { order: 'asc' } },
+          creator: {
+            select: { id: true, firstName: true, lastName: true, email: true },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      prisma.task.count({
+        where: { projectId, status: 'DONE' },
+      }),
+    ]);
+
+    // Hours by user (all logged + completed-task hours)
+    const byUser: Record<
+      string,
+      {
+        user: { id: string; firstName: string; lastName: string; email: string };
+        totalHours: number;
+        completedTaskHours: number;
+      }
+    > = {};
+
+    for (const entry of entries) {
+      const uid = entry.userId;
+      if (!byUser[uid]) {
+        byUser[uid] = {
+          user: entry.user,
+          totalHours: 0,
+          completedTaskHours: 0,
+        };
+      }
+      byUser[uid].totalHours += entry.hours || 0;
+      if (entry.task?.status === 'DONE') {
+        byUser[uid].completedTaskHours += entry.hours || 0;
+      }
+    }
+
+    // Current rate per user (most recent for this project, else global)
+    const rateByUser: Record<string, any> = {};
+    for (const rate of rates) {
+      if (!rateByUser[rate.userId]) {
+        // Prefer project-specific already ordered by effectiveFrom desc; first project match wins then global
+        if (rate.projectId === projectId) {
+          rateByUser[rate.userId] = rate;
+        } else if (!rate.projectId && !rateByUser[rate.userId]) {
+          rateByUser[rate.userId] = rate;
+        }
+      } else if (rate.projectId === projectId && rateByUser[rate.userId].projectId !== projectId) {
+        rateByUser[rate.userId] = rate;
+      }
+    }
+
+    const hoursBreakdown = Object.values(byUser).map((row) => ({
+      ...row,
+      totalHours: Math.round(row.totalHours * 100) / 100,
+      completedTaskHours: Math.round(row.completedTaskHours * 100) / 100,
+      rate: rateByUser[row.user.id]
+        ? {
+            rate: rateByUser[row.user.id].rate,
+            currency: rateByUser[row.user.id].currency,
+            effectiveFrom: rateByUser[row.user.id].effectiveFrom,
+          }
+        : null,
+    }));
+
+    res.json({
+      invoicesEnabled: true,
+      viewerOnly: req.user?.role === 'VIEWER',
+      completedTasks: doneTasks,
+      totalHours: Math.round(entries.reduce((s, e) => s + (e.hours || 0), 0) * 100) / 100,
+      hoursBreakdown,
+      rates: Object.values(rateByUser).map((r: any) => ({
+        user: r.user,
+        rate: r.rate,
+        currency: r.currency,
+        projectId: r.projectId,
+        effectiveFrom: r.effectiveFrom,
+      })),
+      invoices,
+    });
+  } catch (error) {
+    console.error('Invoice summary error:', error);
+    res.status(500).json({ error: 'Failed to load invoice summary' });
+  }
+});
+
 // Get invoices for a project
 router.get('/project/:projectId', authenticate, async (req: AuthRequest, res) => {
   try {
+    const access = await assertInvoiceModuleAccess(req.params.projectId, req.user, {
+      allowViewer: true,
+    });
+    if ('error' in access && access.error) {
+      return res.status(access.status).json({ error: access.error });
+    }
+
     const invoices = await prisma.invoice.findMany({
       where: { projectId: req.params.projectId },
       include: {
@@ -29,7 +187,7 @@ router.get('/project/:projectId', authenticate, async (req: AuthRequest, res) =>
       orderBy: { createdAt: 'desc' },
     });
 
-    res.json({ invoices });
+    res.json({ invoices, viewerOnly: req.user?.role === 'VIEWER' });
   } catch (error) {
     console.error('Get invoices error:', error);
     res.status(500).json({ error: 'Failed to get invoices' });
@@ -530,7 +688,9 @@ router.get('/:id/pdf', authenticate, async (req: AuthRequest, res) => {
         },
         project: {
           select: {
+            id: true,
             name: true,
+            invoicesEnabled: true,
             workspace: {
               select: {
                 name: true,
@@ -550,6 +710,13 @@ router.get('/:id/pdf', authenticate, async (req: AuthRequest, res) => {
 
     if (!invoice) {
       return res.status(404).json({ error: 'Invoice not found' });
+    }
+
+    const access = await assertInvoiceModuleAccess(invoice.projectId, req.user, {
+      allowViewer: true,
+    });
+    if ('error' in access && access.error) {
+      return res.status(access.status).json({ error: access.error });
     }
 
     const doc = new PDFDocument({ margin: 50 });

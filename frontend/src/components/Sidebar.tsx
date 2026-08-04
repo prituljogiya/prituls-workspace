@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
@@ -24,7 +25,8 @@ import {
   BookOpen,
 } from 'lucide-react';
 import { RoleGuard } from './RoleGuard';
-import { hasRole } from '@/utils/rbac';
+import { hasRole, canViewInvoices } from '@/utils/rbac';
+import api from '@/lib/api';
 
 interface SidebarProps {
   projectId?: string;
@@ -34,6 +36,7 @@ export function Sidebar({ projectId }: SidebarProps) {
   const pathname = usePathname();
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
+  const [invoicesEnabled, setInvoicesEnabled] = useState(false);
 
   // Extract projectId from pathname if not provided.
   // Ignore reserved segments like "new" so /projects/new doesn't fake a project.
@@ -45,6 +48,25 @@ export function Sidebar({ projectId }: SidebarProps) {
       : pathProjectId && !RESERVED_PROJECT_SEGMENTS.has(pathProjectId)
         ? pathProjectId
         : undefined;
+
+  useEffect(() => {
+    if (!extractedProjectId || !user) {
+      setInvoicesEnabled(false);
+      return;
+    }
+    let cancelled = false;
+    api
+      .get(`/projects/${extractedProjectId}`)
+      .then((res) => {
+        if (!cancelled) setInvoicesEnabled(!!res.data.project?.invoicesEnabled);
+      })
+      .catch(() => {
+        if (!cancelled) setInvoicesEnabled(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [extractedProjectId, user]);
 
   const isActive = (path: string) => {
     if (!pathname) return false;
@@ -90,7 +112,8 @@ export function Sidebar({ projectId }: SidebarProps) {
       name: 'Invoices',
       href: `/projects/${extractedProjectId}/invoices`,
       icon: FileText,
-      roles: ['SUPER_ADMIN'],
+      roles: ['SUPER_ADMIN', 'VIEWER', 'WORKSPACE_OWNER', 'PROJECT_MANAGER'],
+      requiresInvoicesEnabled: true,
     },
     {
       name: 'Reports',
@@ -186,6 +209,12 @@ export function Sidebar({ projectId }: SidebarProps) {
                 const Icon = link.icon;
                 // Check if link has role restrictions
                 if (link.roles && user?.role && !hasRole(user.role, link.roles)) {
+                  return null;
+                }
+                if ((link as any).requiresInvoicesEnabled && !invoicesEnabled) {
+                  return null;
+                }
+                if ((link as any).requiresInvoicesEnabled && user?.role && !canViewInvoices(user.role)) {
                   return null;
                 }
                 return (

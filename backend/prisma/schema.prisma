@@ -124,15 +124,16 @@ model WorkspaceMember {
 }
 
 model Project {
-  id          String   @id @default(cuid())
-  name        String
-  description String?
-  workspaceId String
-  createdById String
-  isArchived  Boolean  @default(false)
-  color       String?  @default("#6366f1")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id               String   @id @default(cuid())
+  name             String
+  description      String?
+  workspaceId      String
+  createdById      String
+  isArchived       Boolean  @default(false)
+  invoicesEnabled  Boolean  @default(false)
+  color            String?  @default("#6366f1")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   workspace     Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   creator       User           @relation("ProjectCreator", fields: [createdById], references: [id])
