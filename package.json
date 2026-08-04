@@ -1,0 +1,31 @@
+{
+  "name": "pms",
+  "version": "1.0.0",
+  "description": "Project Management System with Trello and Jira features",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "build": "npm run build:backend && npm run build:frontend",
+    "build:backend": "cd backend && npm run build",
+    "build:frontend": "cd frontend && npm run build",
+    "postinstall": "prisma generate --schema=backend/prisma/schema.prisma"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.22.0",
+    "iconv-lite": "^0.7.0"
+  },
+  "devDependencies": {
+    "@vercel/node": "^3.2.29",
+    "concurrently": "^8.2.2",
+    "prisma": "^5.22.0"
+  },
+  "allowScripts": {
+    "esbuild@0.27.1": true
+  }
+}

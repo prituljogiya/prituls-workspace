@@ -1,0 +1,11 @@
+.git
+.env
+.env.*
+backend/.env
+backend/.env.*
+frontend/.env.local
+frontend/.env*.local
+**/uploads/**
+**/*.log
+.DS_Store
+agent-transcripts
