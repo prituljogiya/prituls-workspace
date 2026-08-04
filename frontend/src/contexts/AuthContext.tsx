@@ -36,12 +36,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Wake the API early so the first real request is less likely to cold-start
+    const base = process.env.NEXT_PUBLIC_API_URL || '/api';
+    fetch(`${base.replace(/\/$/, '')}/health`).catch(() => {});
+
     const storedToken = localStorage.getItem('token');
     const storedUser = localStorage.getItem('user');
 
     if (storedToken && storedUser) {
       setToken(storedToken);
-      setUser(JSON.parse(storedUser));
+      try {
+        setUser(JSON.parse(storedUser));
+      } catch {
+        localStorage.removeItem('user');
+      }
+      // Soft refresh in background — don't block UI on /auth/me
       fetchUser();
     }
     setLoading(false);

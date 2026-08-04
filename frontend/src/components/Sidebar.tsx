@@ -54,11 +54,29 @@ export function Sidebar({ projectId }: SidebarProps) {
       setInvoicesEnabled(false);
       return;
     }
+
+    const cacheKey = `pms:inv:${extractedProjectId}`;
+    try {
+      const cached = sessionStorage.getItem(cacheKey);
+      if (cached === '0' || cached === '1') {
+        setInvoicesEnabled(cached === '1');
+      }
+    } catch {
+      /* ignore */
+    }
+
     let cancelled = false;
     api
       .get(`/projects/${extractedProjectId}`)
       .then((res) => {
-        if (!cancelled) setInvoicesEnabled(!!res.data.project?.invoicesEnabled);
+        if (cancelled) return;
+        const enabled = !!res.data.project?.invoicesEnabled;
+        setInvoicesEnabled(enabled);
+        try {
+          sessionStorage.setItem(cacheKey, enabled ? '1' : '0');
+        } catch {
+          /* ignore */
+        }
       })
       .catch(() => {
         if (!cancelled) setInvoicesEnabled(false);

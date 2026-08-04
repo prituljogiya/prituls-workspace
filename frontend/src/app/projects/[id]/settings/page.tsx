@@ -83,6 +83,16 @@ export default function ProjectSettingsPage() {
         payload.invoicesEnabled = formData.invoicesEnabled;
       }
       await api.patch(`/projects/${projectId}`, payload);
+      if (typeof payload.invoicesEnabled === 'boolean') {
+        try {
+          sessionStorage.setItem(
+            `pms:inv:${projectId}`,
+            payload.invoicesEnabled ? '1' : '0'
+          );
+        } catch {
+          /* ignore */
+        }
+      }
       alert('Project updated successfully!');
       fetchProject(projectId);
     } catch (error: any) {

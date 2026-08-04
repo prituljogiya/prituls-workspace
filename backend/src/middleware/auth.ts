@@ -11,6 +11,29 @@ export interface AuthRequest extends Request {
   };
 }
 
+type CachedUser = {
+  user: { id: string; email: string; role: string; isActive: boolean };
+  at: number;
+};
+
+// Short-lived cache so warm API invocations skip a DB round-trip per request
+const userCache = new Map<string, CachedUser>();
+const CACHE_TTL_MS = 60_000;
+
+function getCached(userId: string): CachedUser['user'] | null {
+  const hit = userCache.get(userId);
+  if (!hit) return null;
+  if (Date.now() - hit.at > CACHE_TTL_MS) {
+    userCache.delete(userId);
+    return null;
+  }
+  return hit.user;
+}
+
+function setCached(user: CachedUser['user']) {
+  userCache.set(user.id, { user, at: Date.now() });
+}
+
 export const authenticate = async (
   req: AuthRequest,
   res: Response,
@@ -25,7 +48,19 @@ export const authenticate = async (
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET!) as {
       userId: string;
+      email?: string;
+      role?: string;
     };
+
+    const cached = getCached(decoded.userId);
+    if (cached) {
+      if (!cached.isActive) {
+        return res.status(401).json({ error: 'Invalid or inactive user' });
+      }
+      req.userId = cached.id;
+      req.user = { id: cached.id, email: cached.email, role: cached.role };
+      return next();
+    }
 
     const user = await prisma.user.findUnique({
       where: { id: decoded.userId },
@@ -41,6 +76,7 @@ export const authenticate = async (
       return res.status(401).json({ error: 'Invalid or inactive user' });
     }
 
+    setCached(user);
     req.userId = user.id;
     req.user = user;
     next();
@@ -98,4 +134,3 @@ export const denyViewer = (
   }
   next();
 };
-

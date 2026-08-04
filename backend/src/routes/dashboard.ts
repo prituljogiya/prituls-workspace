@@ -16,94 +16,132 @@ router.get('/', authenticate, async (req: AuthRequest, res) => {
       },
     };
 
-    // Get projects: SUPER_ADMIN sees all, others only memberships
-    const projects = await prisma.project.findMany({
-      where: isSuperAdmin
-        ? { isArchived: false }
-        : { ...memberFilter, isArchived: false },
-      include: {
-        workspace: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-          },
-        },
-        _count: {
-          select: {
-            tasks: true,
-            boards: true,
-          },
-        },
-      },
-      orderBy: { updatedAt: 'desc' },
-    });
+    const upcomingDueDate = new Date();
+    upcomingDueDate.setDate(upcomingDueDate.getDate() + 7);
 
-    // Include all project tasks (board + backlog) for report charts
-    const allTasks = await prisma.task.findMany({
-      where: {
-        project: isSuperAdmin ? { isArchived: false } : memberFilter,
-      },
-      select: {
-        id: true,
-        status: true,
-        issueType: true,
-        projectId: true,
-        storyPoints: true,
-      },
-    });
-
-    // Get assigned tasks (for SUPER_ADMIN show recent tasks across all projects)
-    const assignedTasks = await prisma.task.findMany({
-      where: isSuperAdmin
-        ? { isInBacklog: false }
-        : {
-            assignments: {
-              some: {
-                userId: req.userId!,
-              },
+    // Run independent queries in parallel (was sequential → slower)
+    const [projects, allTasks, assignedTasks, tasksDueSoon] = await Promise.all([
+      prisma.project.findMany({
+        where: isSuperAdmin
+          ? { isArchived: false }
+          : { ...memberFilter, isArchived: false },
+        include: {
+          workspace: {
+            select: {
+              id: true,
+              name: true,
+              slug: true,
             },
-            project: memberFilter,
-            isInBacklog: false,
           },
-      include: {
-        project: {
-          select: {
-            id: true,
-            name: true,
-            color: true,
-          },
-        },
-        column: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
-        assignments: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                email: true,
-                firstName: true,
-                lastName: true,
-                avatar: true,
-              },
+          _count: {
+            select: {
+              tasks: true,
+              boards: true,
             },
           },
         },
-        labels: true,
-        _count: {
-          select: {
-            comments: true,
-            checklist: true,
+        orderBy: { updatedAt: 'desc' },
+      }),
+      prisma.task.findMany({
+        where: {
+          project: isSuperAdmin ? { isArchived: false } : memberFilter,
+        },
+        select: {
+          id: true,
+          status: true,
+          issueType: true,
+          projectId: true,
+          storyPoints: true,
+        },
+      }),
+      prisma.task.findMany({
+        where: isSuperAdmin
+          ? { isInBacklog: false }
+          : {
+              assignments: {
+                some: {
+                  userId: req.userId!,
+                },
+              },
+              project: memberFilter,
+              isInBacklog: false,
+            },
+        include: {
+          project: {
+            select: {
+              id: true,
+              name: true,
+              color: true,
+            },
+          },
+          column: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+          assignments: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  email: true,
+                  firstName: true,
+                  lastName: true,
+                  avatar: true,
+                },
+              },
+            },
+          },
+          labels: true,
+          _count: {
+            select: {
+              comments: true,
+              checklist: true,
+            },
           },
         },
-      },
-      orderBy: { updatedAt: 'desc' },
-      take: 10,
-    });
+        orderBy: { updatedAt: 'desc' },
+        take: 10,
+      }),
+      prisma.task.findMany({
+        where: {
+          ...(isSuperAdmin
+            ? {}
+            : {
+                assignments: {
+                  some: {
+                    userId: req.userId!,
+                  },
+                },
+              }),
+          dueDate: {
+            lte: upcomingDueDate,
+            gte: new Date(),
+          },
+          status: {
+            not: 'DONE',
+          },
+        },
+        include: {
+          project: {
+            select: {
+              id: true,
+              name: true,
+              color: true,
+            },
+          },
+          column: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
+        orderBy: { dueDate: 'asc' },
+        take: 10,
+      }),
+    ]);
 
     // Calculate stats
     const totalTasks = allTasks.length;
@@ -129,48 +167,6 @@ router.get('/', authenticate, async (req: AuthRequest, res) => {
       EPIC: allTasks.filter((t) => t.issueType === 'EPIC').length,
     };
 
-    // Upcoming due dates (next 7 days)
-    const upcomingDueDate = new Date();
-    upcomingDueDate.setDate(upcomingDueDate.getDate() + 7);
-
-    const tasksDueSoon = await prisma.task.findMany({
-      where: {
-        ...(isSuperAdmin
-          ? {}
-          : {
-              assignments: {
-                some: {
-                  userId: req.userId!,
-                },
-              },
-            }),
-        dueDate: {
-          lte: upcomingDueDate,
-          gte: new Date(),
-        },
-        status: {
-          not: 'DONE',
-        },
-      },
-      include: {
-        project: {
-          select: {
-            id: true,
-            name: true,
-            color: true,
-          },
-        },
-        column: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
-      },
-      orderBy: { dueDate: 'asc' },
-      take: 10,
-    });
-
     const projectReports = projects.map((project) => {
       const projectTasks = allTasks.filter((t) => t.projectId === project.id);
       return {
@@ -182,6 +178,7 @@ router.get('/', authenticate, async (req: AuthRequest, res) => {
       };
     });
 
+    res.setHeader('Cache-Control', 'private, max-age=15');
     res.json({
       projects,
       stats: {
@@ -219,4 +216,3 @@ router.get('/', authenticate, async (req: AuthRequest, res) => {
 });
 
 export default router;
-

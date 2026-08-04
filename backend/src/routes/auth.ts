@@ -54,7 +54,7 @@ router.post(
         },
       });
 
-      const token = generateToken(user.id);
+      const token = generateToken(user.id, { email: user.email, role: user.role });
 
       res.status(201).json({
         user,
@@ -106,7 +106,7 @@ router.post(
         return res.status(401).json({ error: 'Invalid credentials' });
       }
 
-      const token = generateToken(user.id);
+      const token = generateToken(user.id, { email: user.email, role: user.role });
 
       res.json({
         user: {
