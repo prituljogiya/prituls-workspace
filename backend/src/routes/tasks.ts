@@ -735,33 +735,43 @@ router.post(
         mentionedUsernames.push(match[1]);
       }
 
-      // Find users by username/email
-      const mentionedUsers = await prisma.user.findMany({
-        where: {
-          OR: [
-            { email: { in: mentionedUsernames } },
-            { firstName: { in: mentionedUsernames } },
-            { lastName: { in: mentionedUsernames } },
-          ],
-        },
-        select: { id: true },
-      });
+      // Find users by username/email (from typed @tokens)
+      const mentionedUsers =
+        mentionedUsernames.length > 0
+          ? await prisma.user.findMany({
+              where: {
+                OR: [
+                  { email: { in: mentionedUsernames } },
+                  { firstName: { in: mentionedUsernames } },
+                  { lastName: { in: mentionedUsernames } },
+                ],
+              },
+              select: { id: true },
+            })
+          : [];
 
-      const allMentionedIds = [
-        ...mentionedUserIds,
-        ...mentionedUsers.map(u => u.id),
-      ];
+      // Dedupe — UI sends IDs and content @lookup can resolve the same person
+      const fromBody = Array.isArray(mentionedUserIds)
+        ? mentionedUserIds.filter((id: unknown): id is string => typeof id === 'string' && id.length > 0)
+        : [];
+      const allMentionedIds = Array.from(
+        new Set([...fromBody, ...mentionedUsers.map((u) => u.id)])
+      );
 
       const comment = await prisma.taskComment.create({
         data: {
           taskId: req.params.id,
           userId: req.userId!,
           content,
-          mentions: {
-            create: allMentionedIds.map((userId: string) => ({
-              userId,
-            })),
-          },
+          ...(allMentionedIds.length > 0
+            ? {
+                mentions: {
+                  create: allMentionedIds.map((userId: string) => ({
+                    userId,
+                  })),
+                },
+              }
+            : {}),
         },
         include: {
           user: {
