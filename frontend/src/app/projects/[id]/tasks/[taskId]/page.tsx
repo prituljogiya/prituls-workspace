@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
@@ -119,10 +119,25 @@ export default function TaskDetailPage() {
 
   const fetchUsers = async () => {
     try {
+      // Prefer project members for assignee + mentions (lighter than full user list)
+      const projectRes = await api.get(`/projects/${params.id}`);
+      const members = (projectRes.data.project?.members || [])
+        .map((m: any) => m.user)
+        .filter(Boolean);
+      if (members.length > 0) {
+        setAllUsers(members);
+        return;
+      }
       const response = await api.get('/users');
-      setAllUsers(response.data.users);
+      setAllUsers(response.data.users || []);
     } catch (error) {
       console.error('Failed to fetch users:', error);
+      try {
+        const response = await api.get('/users');
+        setAllUsers(response.data.users || []);
+      } catch (e) {
+        console.error('Failed to fetch all users:', e);
+      }
     }
   };
 
@@ -244,38 +259,99 @@ export default function TaskDetailPage() {
 
   const handleCommentChange = (value: string) => {
     setNewComment(value);
-    // Check for @ mentions
     const atIndex = value.lastIndexOf('@');
-    if (atIndex !== -1) {
-      const query = value.substring(atIndex + 1).split(/\s/)[0];
-      if (query.length > 0) {
-        setMentionQuery(query);
-        setShowMentionPicker(true);
-      } else {
-        setShowMentionPicker(false);
-      }
-    } else {
+    if (atIndex === -1) {
       setShowMentionPicker(false);
+      setMentionQuery('');
+      return;
     }
-  };
-
-  const insertMention = (userId: string, userName: string) => {
-    const atIndex = newComment.lastIndexOf('@');
-    if (atIndex !== -1) {
-      const before = newComment.substring(0, atIndex);
-      const after = newComment.substring(atIndex + mentionQuery.length + 1);
-      setNewComment(`${before}@${userName} ${after}`);
-      setCommentMentions([...commentMentions, userId]);
+    const after = value.slice(atIndex + 1);
+    // Active mention: no whitespace after @ yet
+    if (/^[\w.-]*$/.test(after)) {
+      setMentionQuery(after);
+      setShowMentionPicker(true);
+    } else {
       setShowMentionPicker(false);
       setMentionQuery('');
     }
   };
 
-  const filteredUsers = allUsers.filter(user => 
-    user.firstName.toLowerCase().includes(mentionQuery.toLowerCase()) ||
-    user.lastName.toLowerCase().includes(mentionQuery.toLowerCase()) ||
-    user.email.toLowerCase().includes(mentionQuery.toLowerCase())
-  ).slice(0, 5);
+  const insertMention = (userId: string, firstName: string) => {
+    const atIndex = newComment.lastIndexOf('@');
+    if (atIndex === -1) return;
+    const before = newComment.slice(0, atIndex);
+    const after = newComment.slice(atIndex + 1).replace(/^[\w.-]*/, '');
+    setNewComment(`${before}@${firstName}${after.startsWith(' ') || after === '' ? after || ' ' : ` ${after}`}`);
+    setCommentMentions((prev) => (prev.includes(userId) ? prev : [...prev, userId]));
+    setShowMentionPicker(false);
+    setMentionQuery('');
+  };
+
+  // Prefer project members for @ mentions (lighter than all workspace users)
+  const mentionCandidates = allUsers || [];
+
+  const filteredUsers = mentionCandidates
+    .filter(
+      (u: any) =>
+        !mentionQuery ||
+        u.firstName?.toLowerCase().includes(mentionQuery.toLowerCase()) ||
+        u.lastName?.toLowerCase().includes(mentionQuery.toLowerCase()) ||
+        u.email?.toLowerCase().includes(mentionQuery.toLowerCase())
+    )
+    .slice(0, 6);
+
+  const renderCommentBody = (comment: any) => {
+    const content: string = comment.content || '';
+    const mentions: any[] = comment.mentions || [];
+    if (!mentions.length) {
+      return <span>{content}</span>;
+    }
+
+    const labels = mentions
+      .map((m: any) => ({
+        id: m.user.id,
+        email: m.user.email,
+        first: m.user.firstName as string,
+        full: `${m.user.firstName} ${m.user.lastName}`.trim(),
+      }))
+      .sort((a: any, b: any) => b.full.length - a.full.length);
+
+    const escaped = labels
+      .flatMap((l: any) => [`@${l.full}`, `@${l.first}`])
+      .map((s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    const pattern = new RegExp(escaped.join('|'), 'g');
+
+    const nodes: ReactNode[] = [];
+    let last = 0;
+    let match: RegExpExecArray | null;
+    let key = 0;
+    while ((match = pattern.exec(content)) !== null) {
+      if (match.index > last) {
+        nodes.push(<span key={`t-${key++}`}>{content.slice(last, match.index)}</span>);
+      }
+      const token = match[0];
+      const label = labels.find((l: any) => token === `@${l.full}` || token === `@${l.first}`);
+      if (label) {
+        nodes.push(
+          <Link
+            key={`m-${key++}`}
+            href={`/projects/${params.id}/members`}
+            title={label.email}
+            className="inline-flex items-center px-1.5 py-0.5 mx-0.5 rounded-md bg-blue-50 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 font-medium text-sm hover:bg-blue-100 dark:hover:bg-blue-900/70 hover:underline"
+          >
+            @{label.full}
+          </Link>
+        );
+      } else {
+        nodes.push(<span key={`t-${key++}`}>{token}</span>);
+      }
+      last = match.index + token.length;
+    }
+    if (last < content.length) {
+      nodes.push(<span key={`t-${key++}`}>{content.slice(last)}</span>);
+    }
+    return <>{nodes}</>;
+  };
 
   /** Resolve activity values — assigned/unassigned used to store raw user ids */
   const formatActivityValue = (action: string, value?: string | null) => {
@@ -717,23 +793,7 @@ export default function TaskDetailPage() {
                           <p className="text-xs text-gray-500 dark:text-gray-400">{format(new Date(comment.createdAt), 'MMM d, yyyy h:mm a')}</p>
                         </div>
                         <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap mb-2">
-                          {comment.content.split(/(@\w+)/g).map((part: string, i: number) => {
-                            if (part.startsWith('@')) {
-                              const mentionedUser = comment.mentions?.find((m: any) => 
-                                m.user.firstName === part.substring(1) || 
-                                m.user.lastName === part.substring(1) ||
-                                m.user.email === part.substring(1)
-                              );
-                              if (mentionedUser) {
-                                return (
-                                  <span key={i} className="text-blue-600 dark:text-blue-400 font-medium">
-                                    @{mentionedUser.user.firstName} {mentionedUser.user.lastName}
-                                  </span>
-                                );
-                              }
-                            }
-                            return <span key={i}>{part}</span>;
-                          })}
+                          {renderCommentBody(comment)}
                         </p>
                         {/* Reactions */}
                         {comment.reactions && comment.reactions.length > 0 && (
@@ -804,16 +864,20 @@ export default function TaskDetailPage() {
                       {/* Mention Picker */}
                       {showMentionPicker && filteredUsers.length > 0 && (
                         <div className="absolute bottom-full left-0 mb-2 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-10 max-h-48 overflow-y-auto text-gray-900 dark:text-white">
-                          {filteredUsers.map((u) => (
+                          {filteredUsers.map((u: any) => (
                             <button
                               key={u.id}
-                              onClick={() => insertMention(u.id, `${u.firstName} ${u.lastName}`)}
+                              type="button"
+                              onClick={() => insertMention(u.id, u.firstName)}
                               className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
                             >
                               <div className="w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs">
-                                {u.firstName[0]}{u.lastName[0]}
+                                {u.firstName?.[0]}
+                                {u.lastName?.[0]}
                               </div>
-                              <span className="text-gray-900 dark:text-white">{u.firstName} {u.lastName}</span>
+                              <span className="text-gray-900 dark:text-white">
+                                {u.firstName} {u.lastName}
+                              </span>
                             </button>
                           ))}
                         </div>

@@ -182,6 +182,30 @@ router.get('/:id', authenticate, async (req: AuthRequest, res) => {
                 avatar: true,
               },
             },
+            mentions: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    firstName: true,
+                    lastName: true,
+                    email: true,
+                  },
+                },
+              },
+            },
+            reactions: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    firstName: true,
+                    lastName: true,
+                  },
+                },
+              },
+            },
+            attachments: true,
           },
           orderBy: { createdAt: 'asc' },
         },
