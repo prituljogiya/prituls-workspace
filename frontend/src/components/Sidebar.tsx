@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
@@ -23,10 +23,26 @@ import {
   FileText,
   KeyRound,
   BookOpen,
+  ChevronDown,
+  ChevronRight,
+  Columns3,
 } from 'lucide-react';
 import { RoleGuard } from './RoleGuard';
 import { hasRole, canViewInvoices } from '@/utils/rbac';
 import api from '@/lib/api';
+
+interface SidebarBoard {
+  id: string;
+  name: string;
+  order?: number;
+}
+
+interface SidebarProject {
+  id: string;
+  name: string;
+  color?: string | null;
+  boards?: SidebarBoard[];
+}
 
 interface SidebarProps {
   projectId?: string;
@@ -37,6 +53,9 @@ export function Sidebar({ projectId }: SidebarProps) {
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [invoicesEnabled, setInvoicesEnabled] = useState(false);
+  const [projects, setProjects] = useState<SidebarProject[]>([]);
+  const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>({});
+  const [projectsLoading, setProjectsLoading] = useState(false);
 
   // Extract projectId from pathname if not provided.
   // Ignore reserved segments like "new" so /projects/new doesn't fake a project.
@@ -48,6 +67,51 @@ export function Sidebar({ projectId }: SidebarProps) {
       : pathProjectId && !RESERVED_PROJECT_SEGMENTS.has(pathProjectId)
         ? pathProjectId
         : undefined;
+
+  const pathBoardId = pathname?.match(/\/boards\/([^\/]+)/)?.[1];
+
+  useEffect(() => {
+    if (!user) {
+      setProjects([]);
+      return;
+    }
+    let cancelled = false;
+    setProjectsLoading(true);
+    api
+      .get('/projects')
+      .then((res) => {
+        if (cancelled) return;
+        const list: SidebarProject[] = res.data.projects || [];
+        setProjects(list);
+        setExpandedProjects((prev) => {
+          const next = { ...prev };
+          // Keep previously expanded; auto-expand current project
+          if (extractedProjectId) next[extractedProjectId] = true;
+          // If nothing expanded yet, expand first project for discoverability
+          if (Object.keys(next).length === 0 && list[0]) {
+            next[list[0].id] = true;
+          }
+          return next;
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setProjects([]);
+      })
+      .finally(() => {
+        if (!cancelled) setProjectsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
+  // Keep current project expanded while navigating inside it
+  useEffect(() => {
+    if (!extractedProjectId) return;
+    setExpandedProjects((prev) =>
+      prev[extractedProjectId] ? prev : { ...prev, [extractedProjectId]: true }
+    );
+  }, [extractedProjectId]);
 
   useEffect(() => {
     if (!extractedProjectId || !user) {
@@ -86,6 +150,11 @@ export function Sidebar({ projectId }: SidebarProps) {
     };
   }, [extractedProjectId, user]);
 
+  const currentProjectName = useMemo(
+    () => projects.find((p) => p.id === extractedProjectId)?.name,
+    [projects, extractedProjectId]
+  );
+
   const isActive = (path: string) => {
     if (!pathname) return false;
     if (pathname === path) return true;
@@ -94,64 +163,70 @@ export function Sidebar({ projectId }: SidebarProps) {
     return pathname.startsWith(path + '/');
   };
 
-  const projectLinks = extractedProjectId ? [
-    {
-      name: 'Overview',
-      href: `/projects/${extractedProjectId}`,
-      icon: FolderKanban,
-    },
-    {
-      name: 'Boards',
-      href: `/projects/${extractedProjectId}/boards`,
-      icon: LayoutDashboard,
-    },
-    {
-      name: 'Backlog',
-      href: `/projects/${extractedProjectId}/backlog`,
-      icon: ListTodo,
-    },
-    {
-      name: 'Sprints',
-      href: `/projects/${extractedProjectId}/sprints`,
-      icon: Calendar,
-    },
-    {
-      name: 'Documents',
-      href: `/projects/${extractedProjectId}/documents`,
-      icon: BookOpen,
-    },
-    {
-      name: 'Time Tracking',
-      href: `/projects/${extractedProjectId}/time-tracking`,
-      icon: Clock,
-      roles: ['SUPER_ADMIN', 'TEAM_MEMBER', 'WORKSPACE_OWNER', 'PROJECT_MANAGER'],
-    },
-    {
-      name: 'Invoices',
-      href: `/projects/${extractedProjectId}/invoices`,
-      icon: FileText,
-      roles: ['SUPER_ADMIN', 'VIEWER', 'WORKSPACE_OWNER', 'PROJECT_MANAGER'],
-      requiresInvoicesEnabled: true,
-    },
-    {
-      name: 'Reports',
-      href: `/projects/${extractedProjectId}/reports`,
-      icon: BarChart3,
-      roles: ['SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER'],
-    },
-    {
-      name: 'Settings',
-      href: `/projects/${extractedProjectId}/settings`,
-      icon: Settings,
-      roles: ['SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER'],
-    },
-    {
-      name: 'Members',
-      href: `/projects/${extractedProjectId}/members`,
-      icon: Users,
-      roles: ['SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER'],
-    },
-  ] : [];
+  const toggleProject = (id: string) => {
+    setExpandedProjects((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const projectLinks = extractedProjectId
+    ? [
+        {
+          name: 'Overview',
+          href: `/projects/${extractedProjectId}`,
+          icon: FolderKanban,
+        },
+        {
+          name: 'Boards',
+          href: `/projects/${extractedProjectId}/boards`,
+          icon: LayoutDashboard,
+        },
+        {
+          name: 'Backlog',
+          href: `/projects/${extractedProjectId}/backlog`,
+          icon: ListTodo,
+        },
+        {
+          name: 'Sprints',
+          href: `/projects/${extractedProjectId}/sprints`,
+          icon: Calendar,
+        },
+        {
+          name: 'Documents',
+          href: `/projects/${extractedProjectId}/documents`,
+          icon: BookOpen,
+        },
+        {
+          name: 'Time Tracking',
+          href: `/projects/${extractedProjectId}/time-tracking`,
+          icon: Clock,
+          roles: ['SUPER_ADMIN', 'TEAM_MEMBER', 'WORKSPACE_OWNER', 'PROJECT_MANAGER'],
+        },
+        {
+          name: 'Invoices',
+          href: `/projects/${extractedProjectId}/invoices`,
+          icon: FileText,
+          roles: ['SUPER_ADMIN', 'VIEWER', 'WORKSPACE_OWNER', 'PROJECT_MANAGER'],
+          requiresInvoicesEnabled: true,
+        },
+        {
+          name: 'Reports',
+          href: `/projects/${extractedProjectId}/reports`,
+          icon: BarChart3,
+          roles: ['SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER'],
+        },
+        {
+          name: 'Settings',
+          href: `/projects/${extractedProjectId}/settings`,
+          icon: Settings,
+          roles: ['SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER'],
+        },
+        {
+          name: 'Members',
+          href: `/projects/${extractedProjectId}/members`,
+          icon: Users,
+          roles: ['SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER'],
+        },
+      ]
+    : [];
 
   return (
     <div className="h-screen w-64 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 flex flex-col">
@@ -161,15 +236,21 @@ export function Sidebar({ projectId }: SidebarProps) {
           <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center">
             <FolderKanban className="h-5 w-5 text-white" />
           </div>
-          <span className="font-bold text-lg text-gray-900 dark:text-white truncate">Pritul&apos;s workspace</span>
+          <span className="font-bold text-lg text-gray-900 dark:text-white truncate">
+            Pritul&apos;s workspace
+          </span>
         </Link>
       </div>
 
       {/* User Info */}
       <div className="p-4 border-b border-gray-200 dark:border-gray-800">
-        <Link href="/settings" className="flex items-center gap-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 p-1 -m-1 transition-colors">
+        <Link
+          href="/settings"
+          className="flex items-center gap-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 p-1 -m-1 transition-colors"
+        >
           <div className="w-10 h-10 rounded-full bg-primary-500 flex items-center justify-center text-white text-sm font-medium">
-            {user?.firstName?.[0]}{user?.lastName?.[0]}
+            {user?.firstName?.[0]}
+            {user?.lastName?.[0]}
           </div>
           <div className="flex-1 min-w-0">
             <p className="font-medium text-sm truncate text-gray-900 dark:text-white">
@@ -183,12 +264,11 @@ export function Sidebar({ projectId }: SidebarProps) {
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto p-4 space-y-1">
-        {/* Main Links */}
         <Link
           href="/dashboard"
           className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
-            isActive('/dashboard') 
-              ? 'bg-primary-600 text-white' 
+            isActive('/dashboard')
+              ? 'bg-primary-600 text-white'
               : 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800'
           }`}
         >
@@ -216,42 +296,132 @@ export function Sidebar({ projectId }: SidebarProps) {
           </Link>
         </RoleGuard>
 
-        {/* Project Links */}
-        {extractedProjectId && (
-          <>
-            <div className="pt-4 mt-4 border-t border-gray-200 dark:border-gray-800">
-              <p className="px-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
-                Project
-              </p>
-              {projectLinks.map((link) => {
-                const Icon = link.icon;
-                // Check if link has role restrictions
-                if (link.roles && user?.role && !hasRole(user.role, link.roles)) {
-                  return null;
-                }
-                if ((link as any).requiresInvoicesEnabled && !invoicesEnabled) {
-                  return null;
-                }
-                if ((link as any).requiresInvoicesEnabled && user?.role && !canViewInvoices(user.role)) {
-                  return null;
-                }
-                return (
-                  <Link
-                    key={link.href}
-                    href={link.href}
-                    className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
-                      isActive(link.href)
-                        ? 'bg-primary-600 text-white'
-                        : 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800'
-                    }`}
+        {/* Projects + Boards quick access */}
+        <div className="pt-4 mt-4 border-t border-gray-200 dark:border-gray-800">
+          <p className="px-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
+            Projects
+          </p>
+
+          {projectsLoading && (
+            <p className="px-3 py-2 text-xs text-gray-400 dark:text-gray-500">Loading…</p>
+          )}
+
+          {!projectsLoading && projects.length === 0 && (
+            <p className="px-3 py-2 text-xs text-gray-400 dark:text-gray-500">No projects yet</p>
+          )}
+
+          {projects.map((project) => {
+            const expanded = !!expandedProjects[project.id];
+            const isCurrent = project.id === extractedProjectId;
+            const boards = project.boards || [];
+
+            return (
+              <div key={project.id} className="mb-1">
+                <div
+                  className={`flex items-center gap-1 rounded-lg ${
+                    isCurrent ? 'bg-gray-100 dark:bg-gray-800' : ''
+                  }`}
+                >
+                  <button
+                    type="button"
+                    onClick={() => toggleProject(project.id)}
+                    className="p-2 text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 shrink-0"
+                    aria-label={expanded ? 'Collapse project' : 'Expand project'}
                   >
-                    <Icon className="h-5 w-5" />
-                    <span>{link.name}</span>
+                    {expanded ? (
+                      <ChevronDown className="h-4 w-4" />
+                    ) : (
+                      <ChevronRight className="h-4 w-4" />
+                    )}
+                  </button>
+                  <Link
+                    href={`/projects/${project.id}`}
+                    className="flex-1 min-w-0 flex items-center gap-2 py-2 pr-2 text-sm font-medium text-gray-800 dark:text-gray-100 hover:text-primary-600 dark:hover:text-primary-400"
+                    title={project.name}
+                  >
+                    <span
+                      className="w-2.5 h-2.5 rounded-full shrink-0"
+                      style={{ backgroundColor: project.color || '#6366f1' }}
+                    />
+                    <span className="truncate">{project.name}</span>
                   </Link>
-                );
-              })}
-            </div>
-          </>
+                </div>
+
+                {expanded && (
+                  <div className="ml-4 pl-3 border-l border-gray-200 dark:border-gray-700 space-y-0.5 mb-1">
+                    {boards.length === 0 ? (
+                      <p className="px-2 py-1.5 text-xs text-gray-400 dark:text-gray-500">No boards</p>
+                    ) : (
+                      boards.map((board) => {
+                        const href = `/projects/${project.id}/boards/${board.id}`;
+                        const active = pathBoardId === board.id;
+                        return (
+                          <Link
+                            key={board.id}
+                            href={href}
+                            className={`flex items-center gap-2 px-2 py-1.5 rounded-md text-sm transition-colors ${
+                              active
+                                ? 'bg-primary-600 text-white'
+                                : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
+                            }`}
+                            title={board.name}
+                          >
+                            <Columns3 className="h-3.5 w-3.5 shrink-0 opacity-80" />
+                            <span className="truncate">{board.name}</span>
+                          </Link>
+                        );
+                      })
+                    )}
+                    <Link
+                      href={`/projects/${project.id}/boards`}
+                      className={`flex items-center gap-2 px-2 py-1.5 rounded-md text-xs transition-colors ${
+                        pathname === `/projects/${project.id}/boards`
+                          ? 'text-primary-600 dark:text-primary-400 font-medium'
+                          : 'text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
+                      }`}
+                    >
+                      All boards
+                    </Link>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Current project tools */}
+        {extractedProjectId && (
+          <div className="pt-4 mt-4 border-t border-gray-200 dark:border-gray-800">
+            <p className="px-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 truncate">
+              {currentProjectName ? `${currentProjectName}` : 'Project'}
+            </p>
+            {projectLinks.map((link) => {
+              const Icon = link.icon;
+              if (link.roles && user?.role && !hasRole(user.role, link.roles)) {
+                return null;
+              }
+              if ((link as any).requiresInvoicesEnabled && !invoicesEnabled) {
+                return null;
+              }
+              if ((link as any).requiresInvoicesEnabled && user?.role && !canViewInvoices(user.role)) {
+                return null;
+              }
+              return (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
+                    isActive(link.href)
+                      ? 'bg-primary-600 text-white'
+                      : 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800'
+                  }`}
+                >
+                  <Icon className="h-5 w-5" />
+                  <span>{link.name}</span>
+                </Link>
+              );
+            })}
+          </div>
         )}
 
         {/* Admin Links */}
@@ -315,4 +485,3 @@ export function Sidebar({ projectId }: SidebarProps) {
     </div>
   );
 }
-

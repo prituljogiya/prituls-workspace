@@ -36,6 +36,15 @@ router.get('/', authenticate, async (req: AuthRequest, res) => {
             lastName: true,
           },
         },
+        boards: {
+          where: { isActive: true },
+          select: {
+            id: true,
+            name: true,
+            order: true,
+          },
+          orderBy: { order: 'asc' },
+        },
         _count: {
           select: {
             tasks: true,
