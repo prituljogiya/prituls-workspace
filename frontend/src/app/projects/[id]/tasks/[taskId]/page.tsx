@@ -353,7 +353,7 @@ export default function TaskDetailPage() {
     return <>{nodes}</>;
   };
 
-  /** Resolve activity values — assigned/unassigned used to store raw user ids */
+  /** Resolve activity values — assigned/unassigned/sprint used to store raw ids */
   const formatActivityValue = (action: string, value?: string | null) => {
     if (!value) return null;
     if (action === 'assigned' || action === 'unassigned') {
@@ -366,7 +366,33 @@ export default function TaskDetailPage() {
         return `${fromAssignees.user.firstName} ${fromAssignees.user.lastName}`.trim() || fromAssignees.user.email;
       }
     }
+    if (
+      action === 'added_to_sprint' ||
+      action === 'removed_from_sprint' ||
+      action === 'moved_to_next_sprint'
+    ) {
+      const fromList = sprints.find((s) => s.id === value);
+      if (fromList?.name) return fromList.name;
+      if (task?.sprint?.id === value && task.sprint.name) return task.sprint.name;
+      // Already a stored name (not a cuid-like id)
+      if (!/^[a-z0-9]{20,}$/i.test(value)) return value;
+      return value;
+    }
     return value;
+  };
+
+  const formatActivityAction = (action: string) => action.replace(/_/g, ' ');
+
+  const formatActivityLine = (activity: any) => {
+    const action = formatActivityAction(activity.action);
+    if (activity.action === 'moved_to_next_sprint') {
+      const from = formatActivityValue(activity.action, activity.oldValue);
+      const to = formatActivityValue(activity.action, activity.newValue);
+      if (from && to) return `${action}: ${from} → ${to}`;
+      if (to) return `${action}: ${to}`;
+    }
+    const value = formatActivityValue(activity.action, activity.newValue || activity.oldValue);
+    return value ? `${action}: ${value}` : action;
   };
 
   const addChecklistItem = async () => {
@@ -978,12 +1004,9 @@ export default function TaskDetailPage() {
                           <p className="text-sm text-gray-700 dark:text-gray-300">
                             <span className="font-medium">{activity.user.firstName} {activity.user.lastName}</span>
                             {' '}
-                            <span className="text-gray-600 dark:text-gray-400">{activity.action.replace('_', ' ')}</span>
-                            {formatActivityValue(activity.action, activity.newValue || activity.oldValue) && (
-                              <span className="text-gray-500 dark:text-gray-400">
-                                : {formatActivityValue(activity.action, activity.newValue || activity.oldValue)}
-                              </span>
-                            )}
+                            <span className="text-gray-600 dark:text-gray-400">
+                              {formatActivityLine(activity)}
+                            </span>
                           </p>
                           <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
                             {format(new Date(activity.createdAt), 'MMM d, yyyy h:mm a')}

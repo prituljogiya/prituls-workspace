@@ -422,8 +422,8 @@ router.patch(
                 taskId,
                 userId: req.userId!,
                 action: 'moved_to_next_sprint',
-                oldValue: existing.id,
-                newValue: nextSprintId,
+                oldValue: existing.name,
+                newValue: nextSprint.name,
               },
             });
           }
@@ -643,7 +643,7 @@ router.patch(
           taskId: task.id,
           userId: req.userId!,
           action: 'added_to_sprint',
-          newValue: req.params.id,
+          newValue: sprint.name,
         },
       });
 
@@ -688,7 +688,7 @@ router.delete(
           taskId: task.id,
           userId: req.userId!,
           action: 'removed_from_sprint',
-          oldValue: req.params.id,
+          oldValue: sprint.name,
         },
       });
 
