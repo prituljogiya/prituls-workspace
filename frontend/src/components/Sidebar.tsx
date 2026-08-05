@@ -56,6 +56,8 @@ export function Sidebar({ projectId }: SidebarProps) {
   const [projects, setProjects] = useState<SidebarProject[]>([]);
   const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>({});
   const [projectsLoading, setProjectsLoading] = useState(false);
+  const [showAllProjects, setShowAllProjects] = useState(false);
+  const PROJECT_PREVIEW_COUNT = 3;
 
   // Extract projectId from pathname if not provided.
   // Ignore reserved segments like "new" so /projects/new doesn't fake a project.
@@ -85,12 +87,8 @@ export function Sidebar({ projectId }: SidebarProps) {
         setProjects(list);
         setExpandedProjects((prev) => {
           const next = { ...prev };
-          // Keep previously expanded; auto-expand current project
+          // Only auto-expand the project you're currently in
           if (extractedProjectId) next[extractedProjectId] = true;
-          // If nothing expanded yet, expand first project for discoverability
-          if (Object.keys(next).length === 0 && list[0]) {
-            next[list[0].id] = true;
-          }
           return next;
         });
       })
@@ -154,6 +152,19 @@ export function Sidebar({ projectId }: SidebarProps) {
     () => projects.find((p) => p.id === extractedProjectId)?.name,
     [projects, extractedProjectId]
   );
+
+  // Current project first, then the rest — collapsed list shows only a few
+  const orderedProjects = useMemo(() => {
+    if (!extractedProjectId) return projects;
+    const current = projects.find((p) => p.id === extractedProjectId);
+    if (!current) return projects;
+    return [current, ...projects.filter((p) => p.id !== extractedProjectId)];
+  }, [projects, extractedProjectId]);
+
+  const visibleProjects = showAllProjects
+    ? orderedProjects
+    : orderedProjects.slice(0, PROJECT_PREVIEW_COUNT);
+  const hiddenCount = Math.max(0, orderedProjects.length - PROJECT_PREVIEW_COUNT);
 
   const isActive = (path: string) => {
     if (!pathname) return false;
@@ -286,21 +297,23 @@ export function Sidebar({ projectId }: SidebarProps) {
           </Link>
         </RoleGuard>
 
-        <RoleGuard allowedRoles={['SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER']}>
-          <Link
-            href="/projects/new"
-            className="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-          >
-            <Plus className="h-5 w-5" />
-            <span>New Project</span>
-          </Link>
-        </RoleGuard>
-
         {/* Projects + Boards quick access */}
         <div className="pt-4 mt-4 border-t border-gray-200 dark:border-gray-800">
-          <p className="px-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
-            Projects
-          </p>
+          <div className="px-3 mb-2 flex items-center justify-between gap-2">
+            <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              Projects
+            </p>
+            <RoleGuard allowedRoles={['SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER']}>
+              <Link
+                href="/projects/new"
+                className="inline-flex items-center gap-0.5 text-xs font-medium text-primary-600 dark:text-primary-400 hover:underline"
+                title="New project"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Add
+              </Link>
+            </RoleGuard>
+          </div>
 
           {projectsLoading && (
             <p className="px-3 py-2 text-xs text-gray-400 dark:text-gray-500">Loading…</p>
@@ -310,7 +323,7 @@ export function Sidebar({ projectId }: SidebarProps) {
             <p className="px-3 py-2 text-xs text-gray-400 dark:text-gray-500">No projects yet</p>
           )}
 
-          {projects.map((project) => {
+          {visibleProjects.map((project) => {
             const expanded = !!expandedProjects[project.id];
             const isCurrent = project.id === extractedProjectId;
             const boards = project.boards || [];
@@ -387,6 +400,16 @@ export function Sidebar({ projectId }: SidebarProps) {
               </div>
             );
           })}
+
+          {hiddenCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowAllProjects((v) => !v)}
+              className="w-full mt-1 px-3 py-2 text-xs font-medium text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20 rounded-lg transition-colors text-left"
+            >
+              {showAllProjects ? 'Show less' : `Show more (${hiddenCount})`}
+            </button>
+          )}
         </div>
 
         {/* Current project tools */}
