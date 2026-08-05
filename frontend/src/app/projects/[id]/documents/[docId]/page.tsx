@@ -1,14 +1,13 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import api from '@/lib/api';
 import { Layout } from '@/components/Layout';
-import { ArrowLeft, Eye, Pencil, Save, Trash2 } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import { DocumentEditor } from '@/components/DocumentEditor';
+import { ArrowLeft, Save, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { canManageDocuments } from '@/utils/rbac';
 
@@ -21,15 +20,21 @@ export default function DocumentDetailPage() {
 
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
+  const [loadedContent, setLoadedContent] = useState('');
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
   const [creatorName, setCreatorName] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [mode, setMode] = useState<'edit' | 'preview'>('edit');
   const [dirty, setDirty] = useState(false);
   const [saveMsg, setSaveMsg] = useState('');
+  const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latestRef = useRef({ title: '', content: '' });
 
   const canEdit = user?.role ? canManageDocuments(user.role) : false;
+
+  useEffect(() => {
+    latestRef.current = { title, content };
+  }, [title, content]);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -39,16 +44,13 @@ export default function DocumentDetailPage() {
     if (user && documentId) fetchDocument();
   }, [user, authLoading, documentId, router]);
 
-  useEffect(() => {
-    if (!canEdit) setMode('preview');
-  }, [canEdit]);
-
   const fetchDocument = async () => {
     try {
       const res = await api.get(`/documents/${documentId}`);
       const doc = res.data.document;
       setTitle(doc.title || '');
       setContent(doc.content || '');
+      setLoadedContent(doc.content || '');
       setUpdatedAt(doc.updatedAt);
       if (doc.creator) {
         setCreatorName(`${doc.creator.firstName} ${doc.creator.lastName}`.trim());
@@ -62,22 +64,50 @@ export default function DocumentDetailPage() {
     }
   };
 
-  const save = async () => {
-    if (!canEdit) return;
-    try {
-      setSaving(true);
-      setSaveMsg('');
-      const res = await api.put(`/documents/${documentId}`, { title, content });
-      setUpdatedAt(res.data.document.updatedAt);
-      setDirty(false);
-      setSaveMsg('Saved');
-      setTimeout(() => setSaveMsg(''), 2000);
-    } catch (err: any) {
-      alert(err.response?.data?.error || 'Failed to save');
-    } finally {
-      setSaving(false);
-    }
-  };
+  const save = useCallback(
+    async (silent = false) => {
+      if (!canEdit) return;
+      const { title: t, content: c } = latestRef.current;
+      try {
+        if (!silent) setSaving(true);
+        setSaveMsg('');
+        const res = await api.put(`/documents/${documentId}`, { title: t, content: c });
+        setUpdatedAt(res.data.document.updatedAt);
+        setDirty(false);
+        setSaveMsg('Saved');
+        setTimeout(() => setSaveMsg(''), 2000);
+      } catch (err: any) {
+        if (!silent) alert(err.response?.data?.error || 'Failed to save');
+        else setSaveMsg('Save failed');
+      } finally {
+        setSaving(false);
+      }
+    },
+    [canEdit, documentId]
+  );
+
+  // Autosave ~1.5s after edits (Google Docs–like)
+  useEffect(() => {
+    if (!canEdit || !dirty) return;
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    autoSaveTimer.current = setTimeout(() => {
+      save(true);
+    }, 1500);
+    return () => {
+      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    };
+  }, [dirty, title, content, canEdit, save]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+        e.preventDefault();
+        save(false);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [save]);
 
   const remove = async () => {
     if (!confirm(`Delete “${title}”?`)) return;
@@ -88,17 +118,6 @@ export default function DocumentDetailPage() {
       alert(err.response?.data?.error || 'Failed to delete');
     }
   };
-
-  const preview = useMemo(
-    () => (
-      <div className="doc-markdown">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>
-          {content || '_No content yet._'}
-        </ReactMarkdown>
-      </div>
-    ),
-    [content]
-  );
 
   if (loading || authLoading) {
     return (
@@ -112,8 +131,8 @@ export default function DocumentDetailPage() {
 
   return (
     <Layout projectId={projectId}>
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col">
-        <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+      <div className="h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
+        <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex-shrink-0 z-20">
           <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex flex-wrap items-center gap-3 justify-between">
             <div className="flex items-center gap-3 min-w-0 flex-1">
               <Link
@@ -130,6 +149,7 @@ export default function DocumentDetailPage() {
                     setDirty(true);
                   }}
                   className="flex-1 min-w-0 text-lg font-semibold bg-transparent border-b border-transparent focus:border-blue-500 outline-none text-gray-900 dark:text-white py-1"
+                  placeholder="Untitled document"
                 />
               ) : (
                 <h1 className="text-lg font-semibold text-gray-900 dark:text-white truncate">{title}</h1>
@@ -137,46 +157,22 @@ export default function DocumentDetailPage() {
             </div>
 
             <div className="flex items-center gap-2 flex-wrap">
-              {saveMsg && <span className="text-xs text-green-600 dark:text-green-400">{saveMsg}</span>}
+              {saveMsg && (
+                <span className="text-xs text-green-600 dark:text-green-400">{saveMsg}</span>
+              )}
               {updatedAt && (
                 <span className="text-xs text-gray-500 dark:text-gray-400 hidden sm:inline">
                   {creatorName && `${creatorName} · `}
                   {format(new Date(updatedAt), 'MMM d, h:mm a')}
-                  {dirty ? ' · unsaved' : ''}
+                  {dirty ? ' · Saving…' : ''}
                 </span>
-              )}
-              {canEdit && (
-                <div className="flex rounded-lg overflow-hidden border border-gray-200 dark:border-gray-600">
-                  <button
-                    type="button"
-                    onClick={() => setMode('edit')}
-                    className={`px-3 py-1.5 text-xs font-medium flex items-center gap-1 ${
-                      mode === 'edit'
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300'
-                    }`}
-                  >
-                    <Pencil className="h-3.5 w-3.5" /> Edit
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setMode('preview')}
-                    className={`px-3 py-1.5 text-xs font-medium flex items-center gap-1 ${
-                      mode === 'preview'
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300'
-                    }`}
-                  >
-                    <Eye className="h-3.5 w-3.5" /> Preview
-                  </button>
-                </div>
               )}
               {canEdit && (
                 <>
                   <button
                     type="button"
-                    onClick={save}
-                    disabled={saving || !dirty}
+                    onClick={() => save(false)}
+                    disabled={saving}
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
                   >
                     <Save className="h-4 w-4" />
@@ -196,23 +192,16 @@ export default function DocumentDetailPage() {
           </div>
         </header>
 
-        <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          {mode === 'edit' && canEdit ? (
-            <textarea
-              value={content}
-              onChange={(e) => {
-                setContent(e.target.value);
-                setDirty(true);
-              }}
-              spellCheck
-              className="w-full min-h-[70vh] font-mono text-sm leading-relaxed p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500/40 resize-y"
-              placeholder="Write Markdown here…"
-            />
-          ) : (
-            <div className="min-h-[70vh] p-6 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
-              {preview}
-            </div>
-          )}
+        <main className="flex-1 min-h-0 max-w-6xl w-full mx-auto px-2 sm:px-4 py-4">
+          <DocumentEditor
+            key={documentId}
+            content={loadedContent}
+            editable={canEdit}
+            onChange={(html) => {
+              setContent(html);
+              setDirty(true);
+            }}
+          />
         </main>
       </div>
     </Layout>

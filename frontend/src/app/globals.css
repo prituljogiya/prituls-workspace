@@ -190,7 +190,7 @@ html.dark {
   }
 }
 
-/* —— Document markdown preview —— */
+/* —— Document markdown preview (legacy) —— */
 .doc-markdown {
   @apply text-gray-800 dark:text-gray-200 text-[15px] leading-relaxed;
 }
@@ -239,4 +239,43 @@ html.dark {
 }
 .doc-markdown hr {
   @apply my-8 border-gray-200 dark:border-gray-700;
+}
+
+/* —— TipTap / Google Docs–style editor —— */
+.doc-editor {
+  @apply outline-none;
+}
+.doc-editor h1 {
+  @apply text-3xl font-bold mt-2 mb-4 text-gray-900 dark:text-white;
+}
+.doc-editor h2 {
+  @apply text-2xl font-semibold mt-6 mb-3 text-gray-900 dark:text-white;
+}
+.doc-editor h3 {
+  @apply text-xl font-semibold mt-5 mb-2 text-gray-900 dark:text-white;
+}
+.doc-editor p {
+  @apply my-2 leading-relaxed;
+}
+.doc-editor ul {
+  @apply list-disc pl-6 my-3;
+}
+.doc-editor ol {
+  @apply list-decimal pl-6 my-3;
+}
+.doc-editor blockquote {
+  @apply border-l-4 border-gray-300 dark:border-gray-600 pl-4 italic text-gray-600 dark:text-gray-400 my-4;
+}
+.doc-editor hr {
+  @apply my-6 border-gray-200 dark:border-gray-700;
+}
+.doc-editor img {
+  @apply max-w-full h-auto rounded-lg my-4;
+}
+.doc-editor p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+  @apply text-gray-400 dark:text-gray-500;
 }

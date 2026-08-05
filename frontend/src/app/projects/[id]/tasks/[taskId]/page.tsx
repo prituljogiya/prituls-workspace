@@ -400,6 +400,15 @@ export default function TaskDetailPage() {
     }
   };
 
+  const removeLabel = async (labelId: string) => {
+    try {
+      await api.delete(`/tasks/${params.taskId}/labels/${labelId}`);
+      fetchTask();
+    } catch (error: any) {
+      alert(error.response?.data?.error || 'Failed to remove label');
+    }
+  };
+
   const setDueDate = async (date: string) => {
     try {
       await api.patch(`/tasks/${params.taskId}`, { dueDate: date });
@@ -1401,12 +1410,24 @@ export default function TaskDetailPage() {
                     {task.labels?.map((label: any) => (
                       <span
                         key={label.id}
-                        className="px-2 py-0.5 rounded text-xs font-medium text-white"
+                        className="group/label inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium text-white"
                         style={{ backgroundColor: label.color }}
                       >
                         {label.name}
+                        <button
+                          type="button"
+                          onClick={() => removeLabel(label.id)}
+                          className="ml-0.5 rounded-full p-0.5 hover:bg-black/20 transition-colors"
+                          title={`Remove ${label.name}`}
+                          aria-label={`Remove label ${label.name}`}
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
                       </span>
                     ))}
+                    {(!task.labels || task.labels.length === 0) && (
+                      <p className="text-xs text-gray-400 dark:text-gray-500">No labels yet</p>
+                    )}
                   </div>
                   <div className="flex gap-2">
                     <input

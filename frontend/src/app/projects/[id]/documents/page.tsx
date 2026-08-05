@@ -56,7 +56,7 @@ export default function DocumentsPage() {
       const res = await api.post('/documents', {
         projectId,
         title: newTitle.trim(),
-        content: `# ${newTitle.trim()}\n\nStart writing here…\n`,
+        content: `<h1>${newTitle.trim().replace(/</g, '')}</h1><p></p>`,
       });
       setShowCreate(false);
       setNewTitle('');
@@ -109,7 +109,7 @@ export default function DocumentsPage() {
                     Documents
                   </h1>
                   <p className="text-sm text-gray-500 dark:text-gray-400">
-                    Project docs in Markdown — create and save as many as you need
+                    Rich docs like Google Docs — headings, lists, links, images, autosave
                   </p>
                 </div>
               </div>
