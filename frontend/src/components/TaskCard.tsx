@@ -84,7 +84,7 @@ export function TaskCard({ task }: TaskCardProps) {
       </div>
 
       {/* Title */}
-      <h4 className="font-medium text-gray-900 dark:text-white text-sm mb-2 line-clamp-2 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+      <h4 className="font-medium text-gray-900 dark:text-white text-sm mb-2 line-clamp-4 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors" title={task.title}>
         {task.title}
       </h4>
 
