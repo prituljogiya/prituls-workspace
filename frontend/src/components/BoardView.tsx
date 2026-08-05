@@ -173,7 +173,7 @@ export function BoardView({ boardId, projectId }: BoardViewProps) {
       : tasks;
 
   return (
-    <div className="h-full bg-gray-50 dark:bg-gray-900 flex flex-col">
+    <div className="h-full min-h-0 bg-gray-50 dark:bg-gray-900 flex flex-col">
       <div className="px-4 py-2 flex items-center justify-between gap-3 flex-shrink-0">
         <div className="text-sm text-gray-600 dark:text-gray-400">
           {sprintFilter === 'active' && activeSprintName
@@ -210,7 +210,7 @@ export function BoardView({ boardId, projectId }: BoardViewProps) {
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
       >
-        <div className="flex gap-3 overflow-x-auto pb-4 flex-1 px-4">
+        <div className="flex gap-3 overflow-x-auto pb-4 flex-1 min-h-0 px-4 items-stretch">
           <SortableContext
             items={columns.map(c => c.id)}
             strategy={horizontalListSortingStrategy}
@@ -229,7 +229,7 @@ export function BoardView({ boardId, projectId }: BoardViewProps) {
           </SortableContext>
 
           {/* Add Column Button - Jira Style */}
-          <div className="min-w-[280px] flex-shrink-0">
+          <div className="w-[280px] min-w-[280px] max-w-[280px] flex-shrink-0">
             <button
               onClick={() => {
                 const name = prompt('Column name:');
@@ -245,8 +245,8 @@ export function BoardView({ boardId, projectId }: BoardViewProps) {
 
         <DragOverlay>
           {activeTask ? (
-            <div className="bg-white dark:bg-gray-800 p-3 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 min-w-[280px]">
-              <h4 className="font-medium text-sm text-gray-900 dark:text-white">{activeTask.title}</h4>
+            <div className="bg-white dark:bg-gray-800 p-3 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 w-[280px]">
+              <h4 className="font-medium text-sm text-gray-900 dark:text-white line-clamp-4 break-words">{activeTask.title}</h4>
             </div>
           ) : null}
         </DragOverlay>
