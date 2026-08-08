@@ -14,15 +14,15 @@
     "build": "npm run build:backend && npm run build:frontend",
     "build:backend": "cd backend && npm run build",
     "build:frontend": "cd frontend && npm run build",
-    "postinstall": "prisma generate --schema=backend/prisma/schema.prisma"
+    "postinstall": "npx prisma generate --schema=backend/prisma/schema.prisma"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
     "iconv-lite": "^0.7.0"
   },
   "devDependencies": {
-    "concurrently": "^8.2.2",
     "@vercel/node": "^3.2.29",
+    "concurrently": "^8.2.2",
     "prisma": "^5.22.0"
   },
   "allowScripts": {
