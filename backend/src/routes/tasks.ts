@@ -8,8 +8,10 @@ import { prisma } from '../utils/prisma';
 
 const router = express.Router();
 
-// Configure multer for file uploads
-const uploadDir = path.join(__dirname, '../../uploads');
+// Configure multer for file uploads (use /tmp on Vercel — only writable path)
+const uploadDir = process.env.VERCEL
+  ? path.join('/tmp', 'pms-uploads')
+  : path.join(__dirname, '../../uploads');
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
