@@ -195,7 +195,15 @@ router.post(
         },
       });
 
-      await sendPasswordResetEmail(email, resetToken);
+      const result = await sendPasswordResetEmail(email, resetToken);
+
+      // When SMTP is not configured, return the link so the UI can show it
+      if (!result.sent) {
+        return res.json({
+          message: 'Reset link generated (email not configured)',
+          resetUrl: result.resetUrl,
+        });
+      }
 
       res.json({ message: 'If email exists, reset link sent' });
     } catch (error) {

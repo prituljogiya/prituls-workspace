@@ -1,20 +1,37 @@
 import nodemailer from 'nodemailer';
 
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: Number(process.env.SMTP_PORT) || 587,
-  secure: false,
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-});
+export function isSmtpConfigured() {
+  return Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+}
+
+function getFrontendUrl() {
+  return (process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '');
+}
+
+export function buildPasswordResetUrl(resetToken: string) {
+  return `${getFrontendUrl()}/reset-password?token=${resetToken}`;
+}
 
 export const sendPasswordResetEmail = async (
   email: string,
   resetToken: string
-): Promise<void> => {
-  const resetUrl = `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`;
+): Promise<{ sent: boolean; resetUrl: string }> => {
+  const resetUrl = buildPasswordResetUrl(resetToken);
+
+  if (!isSmtpConfigured()) {
+    console.warn('SMTP not configured — returning reset link without sending email');
+    return { sent: false, resetUrl };
+  }
+
+  const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port: Number(process.env.SMTP_PORT) || 587,
+    secure: false,
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
+    },
+  });
 
   await transporter.sendMail({
     from: process.env.SMTP_USER,
@@ -28,5 +45,6 @@ export const sendPasswordResetEmail = async (
       <p>If you didn't request this, please ignore this email.</p>
     `,
   });
-};
 
+  return { sent: true, resetUrl };
+};

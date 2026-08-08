@@ -35,9 +35,20 @@ export default function ForgotPasswordPage() {
       setResetUrl('');
       const res = await api.post('/auth/forgot-password', { email: data.email });
       if (res.data.resetUrl) {
-        setResetUrl(res.data.resetUrl);
+        // Prefer current site origin so a wrong FRONTEND_URL env still works
+        try {
+          const u = new URL(res.data.resetUrl);
+          u.protocol = window.location.protocol;
+          u.host = window.location.host;
+          setResetUrl(u.toString());
+        } catch {
+          setResetUrl(res.data.resetUrl);
+        }
       } else {
-        setError('No reset link returned. Check that the email is correct.');
+        setError(
+          res.data.message ||
+            'If that email exists, a reset link was sent. (Email sending may be disabled — try again or contact admin.)'
+        );
       }
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to process request');
