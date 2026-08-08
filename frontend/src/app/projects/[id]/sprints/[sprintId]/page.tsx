@@ -7,18 +7,16 @@ import { useAuth } from '@/contexts/AuthContext';
 import api from '@/lib/api';
 import { Layout } from '@/components/Layout';
 import { ArrowLeft, Plus, Play, Square, TrendingDown, MoveRight } from 'lucide-react';
-import dynamic from 'next/dynamic';
-
-const LineChart = dynamic(() => import('recharts').then((mod) => mod.LineChart as any), { ssr: false });
-const Line = dynamic(() => import('recharts').then((mod) => mod.Line as any), { ssr: false });
-const XAxis = dynamic(() => import('recharts').then((mod) => mod.XAxis as any), { ssr: false });
-const YAxis = dynamic(() => import('recharts').then((mod) => mod.YAxis as any), { ssr: false });
-const CartesianGrid = dynamic(() => import('recharts').then((mod) => mod.CartesianGrid as any), { ssr: false });
-const Tooltip = dynamic(() => import('recharts').then((mod) => mod.Tooltip as any), { ssr: false });
-const Legend = dynamic(() => import('recharts').then((mod) => mod.Legend as any), { ssr: false });
-const ResponsiveContainer = dynamic(() => import('recharts').then((mod) => mod.ResponsiveContainer as any), {
-  ssr: false,
-});
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from 'recharts';
 
 export default function SprintDetailPage() {
   const router = useRouter();
