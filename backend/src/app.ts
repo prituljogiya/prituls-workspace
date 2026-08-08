@@ -18,6 +18,9 @@ import aiRoutes from './routes/ai';
 import searchRoutes from './routes/search';
 import taskTemplateRoutes from './routes/taskTemplates';
 import documentRoutes from './routes/documents';
+import notificationRoutes from './routes/notifications';
+import settingsRoutes from './routes/settings';
+import contractRoutes from './routes/contracts';
 
 dotenv.config();
 
@@ -28,14 +31,13 @@ app.use(
     origin: true,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Cache-Control', 'Pragma'],
   })
 );
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// Uploaded files (ephemeral on Vercel serverless)
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 app.use('/api/auth', authRoutes);
@@ -53,6 +55,9 @@ app.use('/api/ai', aiRoutes);
 app.use('/api/search', searchRoutes);
 app.use('/api/task-templates', taskTemplateRoutes);
 app.use('/api/documents', documentRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/settings', settingsRoutes);
+app.use('/api/contracts', contractRoutes);
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

@@ -5,12 +5,11 @@ import { prisma } from '../utils/prisma';
 
 const router = express.Router();
 
-// Get all workspaces for user
+// Get all workspaces for user (super admin sees all)
 router.get('/', authenticate, async (req: AuthRequest, res) => {
   try {
-    const isSuperAdmin = req.user?.role === 'SUPER_ADMIN';
-    const workspaces = await prisma.workspace.findMany({
-      where: isSuperAdmin
+    const where =
+      req.user?.role === 'SUPER_ADMIN'
         ? { isActive: true }
         : {
             members: {
@@ -19,7 +18,10 @@ router.get('/', authenticate, async (req: AuthRequest, res) => {
               },
             },
             isActive: true,
-          },
+          };
+
+    const workspaces = await prisma.workspace.findMany({
+      where,
       include: {
         members: {
           include: {
@@ -161,21 +163,45 @@ router.get('/:id', authenticate, async (req: AuthRequest, res) => {
   }
 });
 
-// Update workspace
+// Update workspace (includes invoice bank / billing defaults)
 router.patch(
   '/:id',
   authenticate,
   authorize('SUPER_ADMIN', 'WORKSPACE_OWNER'),
   async (req: AuthRequest, res) => {
     try {
-      const { name, description } = req.body;
+      const {
+        name,
+        description,
+        companyName,
+        companyAddress,
+        bankName,
+        accountName,
+        accountNumber,
+        ifscCode,
+        iban,
+        swiftBic,
+        upiId,
+        branchName,
+      } = req.body;
+
+      const data: Record<string, any> = {};
+      if (name !== undefined) data.name = name;
+      if (description !== undefined) data.description = description;
+      if (companyName !== undefined) data.companyName = companyName || null;
+      if (companyAddress !== undefined) data.companyAddress = companyAddress || null;
+      if (bankName !== undefined) data.bankName = bankName || null;
+      if (accountName !== undefined) data.accountName = accountName || null;
+      if (accountNumber !== undefined) data.accountNumber = accountNumber || null;
+      if (ifscCode !== undefined) data.ifscCode = ifscCode || null;
+      if (iban !== undefined) data.iban = iban || null;
+      if (swiftBic !== undefined) data.swiftBic = swiftBic || null;
+      if (upiId !== undefined) data.upiId = upiId || null;
+      if (branchName !== undefined) data.branchName = branchName || null;
 
       const workspace = await prisma.workspace.update({
         where: { id: req.params.id },
-        data: {
-          name,
-          description,
-        },
+        data,
       });
 
       res.json({ workspace });

@@ -1,7 +1,6 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRef, useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -19,11 +18,11 @@ const loginSchema = z.object({
 type LoginForm = z.infer<typeof loginSchema>;
 
 export default function LoginPage() {
-  const router = useRouter();
   const { login } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const submittingRef = useRef(false);
 
   const {
     register,
@@ -34,13 +33,16 @@ export default function LoginPage() {
   });
 
   const onSubmit = async (data: LoginForm) => {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     try {
       setLoading(true);
       setError('');
       await login(data.email, data.password);
-      router.replace('/dashboard');
-      router.refresh();
+      // Full navigation avoids soft-route races that bounce back to login
+      window.location.assign('/dashboard');
     } catch (err: any) {
+      submittingRef.current = false;
       const errorMessage =
         err.message ||
         err.response?.data?.error ||
@@ -48,7 +50,6 @@ export default function LoginPage() {
         'Login failed. Please try again.';
       setError(errorMessage);
       console.error('Login error:', err);
-    } finally {
       setLoading(false);
     }
   };

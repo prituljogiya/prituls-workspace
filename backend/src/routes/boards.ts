@@ -68,13 +68,6 @@ router.get('/:id', authenticate, async (req: AuthRequest, res) => {
                   },
                 },
                 labels: true,
-                sprint: {
-                  select: {
-                    id: true,
-                    name: true,
-                    status: true,
-                  },
-                },
                 _count: {
                   select: {
                     checklist: true,
@@ -91,14 +84,6 @@ router.get('/:id', authenticate, async (req: AuthRequest, res) => {
 
     if (!board) {
       return res.status(404).json({ error: 'Board not found' });
-    }
-
-    const canSeeHours = req.user?.role && ['SUPER_ADMIN', 'TEAM_MEMBER'].includes(req.user.role);
-    if (!canSeeHours) {
-      board.columns = board.columns.map((col: any) => ({
-        ...col,
-        tasks: col.tasks?.map((t: any) => ({ ...t, timeEstimate: null })) || [],
-      }));
     }
 
     res.json({ board });
@@ -130,28 +115,15 @@ router.post(
         select: { order: true },
       });
 
-      const defaultColumns = [
-        { name: 'Todo', color: '#64748b', order: 0 },
-        { name: 'In Progress', color: '#3b82f6', order: 1 },
-        { name: 'In Review', color: '#f59e0b', order: 2 },
-        { name: 'Done', color: '#22c55e', order: 3 },
-        { name: 'Blocked', color: '#ef4444', order: 4 },
-      ];
-
       const board = await prisma.board.create({
         data: {
           name,
           description,
           projectId,
           order: (maxOrder?.order ?? -1) + 1,
-          columns: {
-            create: defaultColumns,
-          },
         },
         include: {
-          columns: {
-            orderBy: { order: 'asc' },
-          },
+          columns: true,
         },
       });
 

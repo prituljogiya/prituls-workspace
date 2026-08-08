@@ -84,8 +84,7 @@ export default function DashboardPage() {
   const fetchDashboard = async () => {
     try {
       const response = await api.get('/dashboard', {
-        headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
-        params: { _u: user?.id },
+        params: { _u: user?.id, _t: Date.now() },
       });
       setData(response.data);
     } catch (error) {

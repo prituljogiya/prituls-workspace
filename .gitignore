@@ -46,3 +46,4 @@ next-env.d.ts
 .env.backup
 **/.env.backup
 backend/.env.backup
+node_modules/

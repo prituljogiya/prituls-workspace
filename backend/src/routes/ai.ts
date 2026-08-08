@@ -5,81 +5,13 @@ import { prisma } from '../utils/prisma';
 
 const router = express.Router();
 
-type SubtaskDraft = { title: string; description?: string | null };
-
-function extractSubtasks(content: string, preferObject: boolean): SubtaskDraft[] {
-  const parsed = JSON.parse(content);
-
-  if (preferObject && parsed?.subtasks && Array.isArray(parsed.subtasks)) {
-    return parsed.subtasks;
-  }
-  if (Array.isArray(parsed)) {
-    return parsed;
-  }
-  if (parsed?.subtasks && Array.isArray(parsed.subtasks)) {
-    return parsed.subtasks;
-  }
-
-  const jsonMatch = content.match(/\[[\s\S]*\]/);
-  if (jsonMatch) {
-    const arr = JSON.parse(jsonMatch[0]);
-    if (Array.isArray(arr)) return arr;
-  }
-
-  throw new Error('Invalid subtasks JSON shape');
-}
-
-/** Offline fallback when AI providers are unavailable / out of quota */
-function localSubtasks(title: string, description?: string): SubtaskDraft[] {
-  const focus = title.trim() || 'the task';
-  const extras = description?.trim()
-    ? [
-        {
-          title: `Clarify details for ${focus}`,
-          description: description.trim().slice(0, 200),
-        },
-      ]
-    : [];
-
-  return [
-    ...extras,
-    { title: `Break down requirements for ${focus}`, description: 'List acceptance criteria and constraints' },
-    { title: `Design approach for ${focus}`, description: 'Sketch solution and identify dependencies' },
-    { title: `Implement core work for ${focus}`, description: 'Build the main functionality' },
-    { title: `Write tests for ${focus}`, description: 'Cover happy path and key edge cases' },
-    { title: `Review and polish ${focus}`, description: 'Code review, cleanup, and docs' },
-    { title: `Verify and close ${focus}`, description: 'QA check and mark ready for done' },
-  ];
-}
-
-function parseOpenAiError(raw: string): string {
-  try {
-    const parsed = JSON.parse(raw);
-    const code = parsed?.error?.code;
-    const message = parsed?.error?.message || raw;
-
-    if (code === 'insufficient_quota' || /exceeded your current quota/i.test(message)) {
-      return 'OpenAI quota exceeded. Add billing/credits at https://platform.openai.com/account/billing, or set GROQ_API_KEY for a free fallback.';
-    }
-    if (code === 'invalid_api_key' || /incorrect api key/i.test(message)) {
-      return 'Invalid OPENAI_API_KEY. Check backend/.env and restart the server.';
-    }
-    if (code === 'model_not_found') {
-      return 'OpenAI model not found. Set OPENAI_MODEL in backend/.env (e.g. gpt-4o-mini).';
-    }
-    return message;
-  } catch {
-    return raw.slice(0, 300) || 'AI provider request failed';
-  }
-}
-
 // Generate subtasks using AI
 router.post(
   '/generate-subtasks',
   authenticate,
   [
     body('taskTitle').notEmpty().withMessage('Task title is required'),
-    body('taskDescription').optional({ nullable: true }).isString(),
+    body('taskDescription').optional().isString(),
     body('taskId').notEmpty().withMessage('Task ID is required'),
   ],
   async (req: AuthRequest, res) => {
@@ -88,22 +20,24 @@ router.post(
       if (!errors.isEmpty()) {
         const errorMessages = errors.array().map((err: any) => `${err.param}: ${err.msg}`).join(', ');
         console.error('Validation errors:', errorMessages);
-        return res.status(400).json({
+        return res.status(400).json({ 
           error: `Validation failed: ${errorMessages}`,
-          errors: errors.array(),
+          errors: errors.array() 
         });
       }
 
       const { taskTitle, taskDescription, taskId } = req.body;
-
-      if (!taskTitle || String(taskTitle).trim() === '') {
+      
+      // Additional validation
+      if (!taskTitle || taskTitle.trim() === '') {
         return res.status(400).json({ error: 'Task title is required and cannot be empty' });
       }
-
-      if (!taskId || String(taskId).trim() === '') {
+      
+      if (!taskId || taskId.trim() === '') {
         return res.status(400).json({ error: 'Task ID is required and cannot be empty' });
       }
 
+      // Check if task exists
       const task = await prisma.task.findUnique({
         where: { id: taskId },
       });
@@ -112,54 +46,37 @@ router.post(
         return res.status(404).json({ error: 'Task not found' });
       }
 
-      const openAIKey = process.env.OPENAI_API_KEY?.trim();
-      const groqKey = process.env.GROQ_API_KEY?.trim();
-
-      if (!openAIKey && !groqKey) {
-        return res.status(500).json({
-          error:
-            'AI API key not configured. Set OPENAI_API_KEY (ChatGPT) or GROQ_API_KEY in backend/.env, then restart the backend.',
-        });
-      }
-
-      // Prefer OpenAI; if it fails with quota/auth, fall back to Groq when available
-      const providers: Array<{
-        name: 'openai' | 'groq';
-        apiKey: string;
-        apiUrl: string;
-        model: string;
-        preferObject: boolean;
-      }> = [];
-
+      // Use OpenAI (ChatGPT) or Groq API - prioritize OpenAI
+      const openAIKey = process.env.OPENAI_API_KEY;
+      const groqKey = process.env.GROQ_API_KEY;
+      const isOpenAI = !!openAIKey;
+      
+      let apiKey: string;
+      let apiUrl: string;
+      let model: string;
+      
       if (openAIKey) {
-        providers.push({
-          name: 'openai',
-          apiKey: openAIKey,
-          apiUrl: 'https://api.openai.com/v1/chat/completions',
-          model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
-          preferObject: true,
+        // Use ChatGPT/OpenAI
+        apiKey = openAIKey;
+        apiUrl = 'https://api.openai.com/v1/chat/completions';
+        // Use gpt-4 if available, fallback to gpt-3.5-turbo
+        model = process.env.OPENAI_MODEL || 'gpt-3.5-turbo';
+      } else if (groqKey) {
+        // Fallback to Groq
+        apiKey = groqKey;
+        apiUrl = 'https://api.groq.com/openai/v1/chat/completions';
+        model = 'llama-3.1-8b-instant';
+      } else {
+        return res.status(500).json({
+          error: 'AI API key not configured. Please set OPENAI_API_KEY (for ChatGPT) or GROQ_API_KEY in environment variables.',
         });
       }
-      if (groqKey) {
-        providers.push({
-          name: 'groq',
-          apiKey: groqKey,
-          apiUrl: 'https://api.groq.com/openai/v1/chat/completions',
-          model: process.env.GROQ_MODEL || 'llama-3.1-8b-instant',
-          preferObject: false,
-        });
-      }
 
-      const title = String(taskTitle).trim();
-      const description =
-        taskDescription && String(taskDescription).trim()
-          ? String(taskDescription).trim()
-          : '';
+      const prompt = isOpenAI
+        ? `Given the following task, generate a list of subtasks that need to be completed.
 
-      const openAiPrompt = `Given the following task, generate a list of subtasks that need to be completed.
-
-Task Title: ${title}
-${description ? `Task Description: ${description}` : ''}
+Task Title: ${taskTitle.trim()}
+${taskDescription && taskDescription.trim() ? `Task Description: ${taskDescription.trim()}` : ''}
 
 Please generate 5-8 specific, actionable subtasks. Each subtask should be:
 1. Clear and specific
@@ -174,139 +91,114 @@ Example format:
 {
   "subtasks": [
     {"title": "Create UI mockup in Figma", "description": "Design the user interface layout"},
-    {"title": "Build login page component", "description": "Implement the login form with validation"}
+    {"title": "Build login page component", "description": "Implement the login form with validation"},
+    {"title": "Integrate authentication API", "description": "Connect frontend to backend auth endpoint"}
   ]
-}`;
+}`
+        : `Given the following task, generate a list of subtasks that need to be completed:
 
-      const groqPrompt = `Given the following task, generate a list of subtasks that need to be completed:
+Task Title: ${taskTitle.trim()}
+${taskDescription && taskDescription.trim() ? `Task Description: ${taskDescription.trim()}` : ''}
 
-Task Title: ${title}
-${description ? `Task Description: ${description}` : ''}
-
-Please generate 5-8 specific, actionable subtasks.
+Please generate 5-8 specific, actionable subtasks. Each subtask should be:
+1. Clear and specific
+2. Actionable (can be completed independently)
+3. Relevant to the main task
 
 Format your response as a JSON array of objects, where each object has:
-- "title": string
-- "description": string (optional)
+- "title": string (the subtask title)
+- "description": string (optional brief description)
 
-Example:
-[{"title":"Research requirements","description":"Gather constraints"}]
+Example format:
+[
+  {"title": "Create UI mockup in Figma", "description": "Design the user interface layout"},
+  {"title": "Build login page component", "description": "Implement the login form with validation"},
+  {"title": "Integrate authentication API", "description": "Connect frontend to backend auth endpoint"}
+]
 
 Return only the JSON array, no additional text.`;
 
-      let lastError = 'Failed to generate subtasks';
-      let content: string | null = null;
-      let usedProvider: string | null = null;
-      let drafted: SubtaskDraft[] | null = null;
-
-      for (const provider of providers) {
-        const prompt = provider.name === 'openai' ? openAiPrompt : groqPrompt;
-        const response = await fetch(provider.apiUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${provider.apiKey}`,
-          },
-          body: JSON.stringify({
-            model: provider.model,
-            messages: [
-              {
-                role: 'system',
-                content:
-                  provider.name === 'openai'
-                    ? 'You are a helpful project planning assistant. Always respond with valid JSON only.'
-                    : 'You are a helpful project planning assistant. Respond with a JSON array only.',
-              },
-              { role: 'user', content: prompt },
-            ],
-            temperature: 0.5,
-            max_tokens: 1500,
-            ...(provider.name === 'openai' ? { response_format: { type: 'json_object' } } : {}),
-          }),
-        });
-
-        if (!response.ok) {
-          const raw = await response.text();
-          console.error(`${provider.name} API error:`, raw);
-          lastError = parseOpenAiError(raw);
-          continue;
-        }
-
-        const data = await response.json();
-        content = data.choices?.[0]?.message?.content || null;
-        if (!content) {
-          lastError = `No response from ${provider.name}`;
-          continue;
-        }
-
-        try {
-          const subtasks = extractSubtasks(content, provider.preferObject)
-            .filter((s) => s && typeof s.title === 'string' && s.title.trim())
-            .map((s) => ({
-              title: String(s.title).trim(),
-              description: s.description ? String(s.description).trim() : null,
-            }));
-
-          if (subtasks.length === 0) {
-            lastError = 'AI returned no usable subtasks';
-            content = null;
-            continue;
-          }
-
-          drafted = subtasks;
-          usedProvider = provider.name;
-          break;
-        } catch (parseError) {
-          console.error('Failed to parse AI response:', content);
-          console.error('Parse error:', parseError);
-          lastError = 'Failed to parse AI response';
-          content = null;
-        }
-      }
-
-      // Local fallback when OpenAI/Groq unavailable (e.g. insufficient_quota)
-      if (!drafted) {
-        console.warn('Using local subtask generator. Last AI error:', lastError);
-        drafted = localSubtasks(title, description || undefined);
-        usedProvider = 'local';
-      }
-
-      const maxOrder = await prisma.subtask.findFirst({
-        where: { taskId },
-        orderBy: { order: 'desc' },
-        select: { order: true },
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: model,
+          messages: [
+            {
+              role: 'user',
+              content: prompt,
+            },
+          ],
+          temperature: 0.7,
+          max_tokens: 1500,
+          ...(isOpenAI && { response_format: { type: 'json_object' } }),
+        }),
       });
-      const startOrder = (maxOrder?.order ?? -1) + 1;
 
+      if (!response.ok) {
+        const error = await response.text();
+        console.error('AI API error:', error);
+        return res.status(500).json({ error: 'Failed to generate subtasks' });
+      }
+
+      const data = await response.json();
+      const content = data.choices[0]?.message?.content;
+
+      if (!content) {
+        return res.status(500).json({ error: 'No response from AI' });
+      }
+
+      // Parse JSON from response
+      let subtasks;
+      try {
+        const parsed = JSON.parse(content);
+        
+        // OpenAI returns { subtasks: [...] }, Groq returns [...]
+        if (isOpenAI && parsed.subtasks && Array.isArray(parsed.subtasks)) {
+          subtasks = parsed.subtasks;
+        } else if (Array.isArray(parsed)) {
+          subtasks = parsed;
+        } else {
+          // Try to extract JSON array from markdown code blocks if present
+          const jsonMatch = content.match(/\[[\s\S]*\]/);
+          const jsonString = jsonMatch ? jsonMatch[0] : content;
+          subtasks = JSON.parse(jsonString);
+        }
+      } catch (parseError) {
+        console.error('Failed to parse AI response:', content);
+        console.error('Parse error:', parseError);
+        return res.status(500).json({ error: 'Failed to parse AI response' });
+      }
+
+      if (!Array.isArray(subtasks) || subtasks.length === 0) {
+        return res.status(500).json({ error: 'Invalid subtasks format' });
+      }
+
+      // Create subtasks in database
       const createdSubtasks = await Promise.all(
-        drafted.map((subtask, index) =>
+        subtasks.map((subtask: any, index: number) =>
           prisma.subtask.create({
             data: {
               taskId,
               title: subtask.title,
               description: subtask.description || null,
-              order: startOrder + index,
-              isAIGenerated: usedProvider !== 'local',
+              order: index,
+              isAIGenerated: true,
             },
           })
         )
       );
 
-      return res.json({
-        subtasks: createdSubtasks,
-        provider: usedProvider,
-        warning:
-          usedProvider === 'local'
-            ? lastError || 'AI unavailable; generated local template subtasks.'
-            : undefined,
-      });
+      res.json({ subtasks: createdSubtasks });
     } catch (error) {
       console.error('Generate subtasks error:', error);
-      return res.status(500).json({
-        error: error instanceof Error ? error.message : 'Failed to generate subtasks',
-      });
+      res.status(500).json({ error: 'Failed to generate subtasks' });
     }
   }
 );
 
 export default router;
+

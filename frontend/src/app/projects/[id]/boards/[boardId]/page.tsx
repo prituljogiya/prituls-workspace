@@ -57,13 +57,10 @@ export default function BoardDetailPage() {
                 <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{board?.name || 'Board'}</h1>
                 <p className="text-sm text-gray-600 dark:text-gray-400">{board?.description || ''}</p>
               </div>
-              <Link
-                href={`/projects/${params.id}/settings`}
-                className="flex items-center gap-2 px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
-              >
+              <button className="flex items-center gap-2 px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white">
                 <Settings className="h-4 w-4" />
                 Settings
-              </Link>
+              </button>
             </div>
           </div>
         </header>

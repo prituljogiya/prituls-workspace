@@ -30,6 +30,7 @@ export default function ProjectSettingsPage() {
     description: '',
     color: '#6366f1',
     invoicesEnabled: false,
+    githubRepo: '',
   });
 
   const fetchProject = useCallback(async (id: string) => {
@@ -43,6 +44,7 @@ export default function ProjectSettingsPage() {
         description: proj.description || '',
         color: proj.color || '#6366f1',
         invoicesEnabled: !!proj.invoicesEnabled,
+        githubRepo: proj.githubRepo || '',
       });
     } catch (error) {
       console.error('Failed to fetch project:', error);
@@ -77,6 +79,7 @@ export default function ProjectSettingsPage() {
         name: formData.name,
         description: formData.description,
         color: formData.color,
+        githubRepo: formData.githubRepo,
       };
       // Only Super Admin can show/hide the Invoices module
       if (user?.role && canManageInvoices(user.role)) {
@@ -88,6 +91,11 @@ export default function ProjectSettingsPage() {
           sessionStorage.setItem(
             `pms:inv:${projectId}`,
             payload.invoicesEnabled ? '1' : '0'
+          );
+          window.dispatchEvent(
+            new CustomEvent('pms:invoices-enabled', {
+              detail: { projectId, enabled: payload.invoicesEnabled },
+            })
           );
         } catch {
           /* ignore */
@@ -182,12 +190,27 @@ export default function ProjectSettingsPage() {
                     className="h-10 w-20 border border-gray-300 dark:border-gray-600 rounded-lg"
                   />
                 </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
+                    GitHub repository
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.githubRepo}
+                    onChange={(e) => setFormData({ ...formData, githubRepo: e.target.value })}
+                    placeholder="owner/repo or https://github.com/owner/repo"
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder:text-gray-400"
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Used by the Pull Requests page. Private repos need GITHUB_TOKEN in backend .env.
+                  </p>
+                </div>
                 <RoleGuard allowedRoles={['SUPER_ADMIN']}>
                   <div className="flex items-start justify-between gap-4 p-4 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900/40">
                     <div>
                       <p className="text-sm font-medium text-gray-900 dark:text-white">Invoices module</p>
                       <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                        Off by default. Turn on only when you want Invoices in the sidebar. Viewers then see rates, completed hours, and can download PDFs — only you can generate.
+                        You always see Invoices. Turn this on so VIEWER (and other allowed roles) can view invoices for this project.
                       </p>
                     </div>
                     <button

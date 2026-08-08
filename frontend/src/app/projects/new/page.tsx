@@ -41,10 +41,6 @@ export default function NewProjectPage() {
       router.push('/login');
       return;
     }
-    if (user && user.role === 'VIEWER') {
-      router.replace('/dashboard');
-      return;
-    }
     if (user) {
       fetchWorkspaces();
     }
@@ -104,7 +100,7 @@ export default function NewProjectPage() {
 
           {workspaces.length === 0 ? (
             <div className="text-center py-8">
-              <p className="text-gray-600 dark:text-gray-400 mb-4">You need to create a workspace first.</p>
+              <p className="text-gray-600 mb-4">You need to create a workspace first.</p>
               <Link
                 href="/workspaces/new"
                 className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
@@ -163,14 +159,14 @@ export default function NewProjectPage() {
               </div>
 
               <div>
-                <label htmlFor="color" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                <label htmlFor="color" className="block text-sm font-medium text-gray-700 mb-1">
                   Color
                 </label>
                 <input
                   {...register('color')}
                   type="color"
                   defaultValue="#6366f1"
-                  className="h-10 w-20 border border-gray-300 dark:border-gray-600 rounded-lg cursor-pointer"
+                  className="h-10 w-20 border border-gray-300 rounded-lg cursor-pointer"
                 />
               </div>
 
@@ -185,7 +181,7 @@ export default function NewProjectPage() {
                 </button>
                 <Link
                   href="/dashboard"
-                  className="px-6 py-2 text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600"
+                  className="px-6 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
                 >
                   Cancel
                 </Link>

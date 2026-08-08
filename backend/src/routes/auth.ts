@@ -89,7 +89,7 @@ router.post(
         console.error('Database connection error:', dbError);
         if (dbError.code === 'P2010' || dbError.message?.includes('Server selection timeout')) {
           return res.status(503).json({ 
-            error: 'Database connection failed. Please check MongoDB Atlas connection settings.',
+            error: 'Database connection failed. Please check Neon Postgres connection settings.',
             details: 'See MONGODB_CONNECTION_FIX.md for troubleshooting steps'
           });
         }
@@ -124,8 +124,8 @@ router.post(
       // If it's a database connection error that wasn't caught earlier
       if (error.code === 'P2010' || error.message?.includes('Server selection timeout') || error.message?.includes('fatal alert')) {
         return res.status(503).json({ 
-          error: 'Database connection failed. Please check MongoDB Atlas connection settings.',
-          message: 'Unable to connect to the database. Please verify your IP is whitelisted in MongoDB Atlas.',
+          error: 'Database connection failed. Please check Neon Postgres connection settings.',
+          message: 'Unable to connect to the database. Please verify your Neon DATABASE_URL and that the project is active.',
           details: 'See MONGODB_CONNECTION_FIX.md for troubleshooting steps'
         });
       }
@@ -161,7 +161,7 @@ router.get('/me', authenticate, async (req: AuthRequest, res) => {
   }
 });
 
-// Forgot Password — returns reset link in response for local/dev (no SMTP required)
+// Forgot Password
 router.post(
   '/forgot-password',
   [body('email').isEmail().normalizeEmail()],
@@ -178,11 +178,9 @@ router.post(
         where: { email },
       });
 
-      // Same generic message whether or not the user exists
-      const generic = { message: 'If that email exists, a reset link was generated.' };
-
       if (!user) {
-        return res.json(generic);
+        // Don't reveal if email exists
+        return res.json({ message: 'If email exists, reset link sent' });
       }
 
       const resetToken = crypto.randomBytes(32).toString('hex');
@@ -197,27 +195,9 @@ router.post(
         },
       });
 
-      const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '');
-      const resetUrl = `${frontendUrl}/reset-password?token=${resetToken}`;
+      await sendPasswordResetEmail(email, resetToken);
 
-      // Try email if SMTP is configured; never fail the request on mail errors
-      if (process.env.SMTP_HOST && process.env.SMTP_USER) {
-        try {
-          await sendPasswordResetEmail(email, resetToken);
-        } catch (mailErr) {
-          console.warn('Password reset email failed (dev token still returned):', mailErr);
-        }
-      }
-
-      console.log(`[forgot-password] Reset link for ${email}: ${resetUrl}`);
-
-      res.json({
-        ...generic,
-        // Dev mode: expose token/link so you can reset without email
-        resetToken,
-        resetUrl,
-        expiresIn: '1 hour',
-      });
+      res.json({ message: 'If email exists, reset link sent' });
     } catch (error) {
       console.error('Forgot password error:', error);
       res.status(500).json({ error: 'Failed to process request' });
@@ -269,54 +249,6 @@ router.post(
     } catch (error) {
       console.error('Reset password error:', error);
       res.status(500).json({ error: 'Failed to reset password' });
-    }
-  }
-);
-
-// Change password (authenticated)
-router.post(
-  '/change-password',
-  authenticate,
-  [
-    body('currentPassword').notEmpty().withMessage('Current password is required'),
-    body('newPassword').isLength({ min: 6 }).withMessage('New password must be at least 6 characters'),
-  ],
-  async (req: AuthRequest, res) => {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
-      }
-
-      const { currentPassword, newPassword } = req.body;
-
-      if (currentPassword === newPassword) {
-        return res.status(400).json({ error: 'New password must be different from current password' });
-      }
-
-      const user = await prisma.user.findUnique({
-        where: { id: req.userId! },
-      });
-
-      if (!user || !user.isActive) {
-        return res.status(401).json({ error: 'User not found' });
-      }
-
-      const isValid = await bcrypt.compare(currentPassword, user.password);
-      if (!isValid) {
-        return res.status(400).json({ error: 'Current password is incorrect' });
-      }
-
-      const hashedPassword = await bcrypt.hash(newPassword, 10);
-      await prisma.user.update({
-        where: { id: user.id },
-        data: { password: hashedPassword },
-      });
-
-      res.json({ message: 'Password changed successfully' });
-    } catch (error) {
-      console.error('Change password error:', error);
-      res.status(500).json({ error: 'Failed to change password' });
     }
   }
 );

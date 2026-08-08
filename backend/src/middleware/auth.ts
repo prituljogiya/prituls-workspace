@@ -12,26 +12,47 @@ export interface AuthRequest extends Request {
 }
 
 type CachedUser = {
-  user: { id: string; email: string; role: string; isActive: boolean };
-  at: number;
+  id: string;
+  email: string;
+  role: string;
+  isActive: boolean;
+  cachedAt: number;
 };
 
-// Short-lived cache so warm API invocations skip a DB round-trip per request
+/** Avoid a Neon round-trip on every API request (remote DB is ~300–600ms from local). */
+const USER_CACHE_TTL_MS = 60_000;
 const userCache = new Map<string, CachedUser>();
-const CACHE_TTL_MS = 60_000;
 
-function getCached(userId: string): CachedUser['user'] | null {
-  const hit = userCache.get(userId);
-  if (!hit) return null;
-  if (Date.now() - hit.at > CACHE_TTL_MS) {
+async function getAuthUser(userId: string): Promise<CachedUser | null> {
+  const cached = userCache.get(userId);
+  if (cached && Date.now() - cached.cachedAt < USER_CACHE_TTL_MS) {
+    return cached;
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      id: true,
+      email: true,
+      role: true,
+      isActive: true,
+    },
+  });
+
+  if (!user) {
     userCache.delete(userId);
     return null;
   }
-  return hit.user;
+
+  const entry: CachedUser = { ...user, cachedAt: Date.now() };
+  userCache.set(userId, entry);
+  return entry;
 }
 
-function setCached(user: CachedUser['user']) {
-  userCache.set(user.id, { user, at: Date.now() });
+/** Call after role/active changes so permissions update immediately. */
+export function invalidateAuthUserCache(userId?: string) {
+  if (userId) userCache.delete(userId);
+  else userCache.clear();
 }
 
 export const authenticate = async (
@@ -52,33 +73,18 @@ export const authenticate = async (
       role?: string;
     };
 
-    const cached = getCached(decoded.userId);
-    if (cached) {
-      if (!cached.isActive) {
-        return res.status(401).json({ error: 'Invalid or inactive user' });
-      }
-      req.userId = cached.id;
-      req.user = { id: cached.id, email: cached.email, role: cached.role };
-      return next();
-    }
-
-    const user = await prisma.user.findUnique({
-      where: { id: decoded.userId },
-      select: {
-        id: true,
-        email: true,
-        role: true,
-        isActive: true,
-      },
-    });
+    const user = await getAuthUser(decoded.userId);
 
     if (!user || !user.isActive) {
       return res.status(401).json({ error: 'Invalid or inactive user' });
     }
 
-    setCached(user);
     req.userId = user.id;
-    req.user = user;
+    req.user = {
+      id: user.id,
+      email: user.email,
+      role: user.role,
+    };
     next();
   } catch (error) {
     return res.status(401).json({ error: 'Invalid token' });
@@ -92,7 +98,6 @@ export const authorize = (...rolesOrArray: (string | string[])[]) => {
       return res.status(401).json({ error: 'Authentication required' });
     }
 
-    // SUPER_ADMIN has full access to all protected routes
     if (req.user.role === 'SUPER_ADMIN') {
       return next();
     }
@@ -105,7 +110,7 @@ export const authorize = (...rolesOrArray: (string | string[])[]) => {
   };
 };
 
-/** Only Super Admin and Team Member may use timesheet / see hours */
+/** Super Admin, managers, and team members may use timesheet / see hours */
 export const allowHoursAccess = (
   req: AuthRequest,
   res: Response,
@@ -114,8 +119,12 @@ export const allowHoursAccess = (
   if (!req.user) {
     return res.status(401).json({ error: 'Authentication required' });
   }
-  if (!['SUPER_ADMIN', 'TEAM_MEMBER'].includes(req.user.role)) {
-    return res.status(403).json({ error: 'Hours are only available to Super Admin and Team Member' });
+  if (
+    !['SUPER_ADMIN', 'TEAM_MEMBER', 'WORKSPACE_OWNER', 'PROJECT_MANAGER'].includes(
+      req.user.role
+    )
+  ) {
+    return res.status(403).json({ error: 'Hours are not available for your role' });
   }
   next();
 };

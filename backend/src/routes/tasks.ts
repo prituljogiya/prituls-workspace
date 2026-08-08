@@ -8,23 +8,8 @@ import { prisma } from '../utils/prisma';
 
 const router = express.Router();
 
-const canSeeHours = (role?: string) =>
-  !!role && ['SUPER_ADMIN', 'TEAM_MEMBER'].includes(role);
-
-function stripHoursFromTask<T extends Record<string, any>>(task: T, role?: string): T {
-  if (canSeeHours(role) || !task) return task;
-  const { timeEstimate, ...rest } = task;
-  return { ...rest, timeEstimate: null } as unknown as T;
-}
-
-function stripHoursFromTasks(tasks: any[], role?: string) {
-  return tasks.map((t) => stripHoursFromTask(t, role));
-}
-
-// Configure multer for file uploads (use /tmp on Vercel — only writable path)
-const uploadDir = process.env.VERCEL
-  ? path.join('/tmp', 'pms-uploads')
-  : path.join(__dirname, '../../uploads');
+// Configure multer for file uploads
+const uploadDir = path.join(__dirname, '../../uploads');
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
@@ -125,7 +110,7 @@ router.get('/project/:projectId', authenticate, async (req: AuthRequest, res) =>
       orderBy: { order: 'asc' },
     });
 
-    res.json({ tasks: stripHoursFromTasks(tasks, req.user?.role) });
+    res.json({ tasks });
   } catch (error: any) {
     console.error('Get tasks error:', error);
     console.error('Error details:', error.message, error.stack);
@@ -182,30 +167,6 @@ router.get('/:id', authenticate, async (req: AuthRequest, res) => {
                 avatar: true,
               },
             },
-            mentions: {
-              include: {
-                user: {
-                  select: {
-                    id: true,
-                    firstName: true,
-                    lastName: true,
-                    email: true,
-                  },
-                },
-              },
-            },
-            reactions: {
-              include: {
-                user: {
-                  select: {
-                    id: true,
-                    firstName: true,
-                    lastName: true,
-                  },
-                },
-              },
-            },
-            attachments: true,
           },
           orderBy: { createdAt: 'asc' },
         },
@@ -245,7 +206,7 @@ router.get('/:id', authenticate, async (req: AuthRequest, res) => {
       return res.status(404).json({ error: 'Task not found' });
     }
 
-    res.json({ task: stripHoursFromTask(task, req.user?.role) });
+    res.json({ task });
   } catch (error) {
     console.error('Get task error:', error);
     res.status(500).json({ error: 'Failed to get task' });
@@ -289,33 +250,11 @@ router.post(
         select: { order: true },
       });
 
-      // Infer task status from column name when creating on a board
-      let status = req.body.status;
-      if (!status && columnId) {
-        const column = await prisma.column.findUnique({ where: { id: columnId } });
-        if (column) {
-          const map: Record<string, 'TODO' | 'IN_PROGRESS' | 'IN_REVIEW' | 'DONE' | 'BLOCKED'> = {
-            'to do': 'TODO',
-            todo: 'TODO',
-            'in progress': 'IN_PROGRESS',
-            inprogress: 'IN_PROGRESS',
-            'in review': 'IN_REVIEW',
-            inreview: 'IN_REVIEW',
-            review: 'IN_REVIEW',
-            done: 'DONE',
-            blocked: 'BLOCKED',
-            blocker: 'BLOCKED',
-          };
-          status = map[column.name.toLowerCase()] || 'TODO';
-        }
-      }
-
       const task = await prisma.task.create({
         data: {
           title,
           description,
           issueType: issueType || 'TASK',
-          status: status || 'TODO',
           projectId,
           columnId,
           boardId,
@@ -388,7 +327,6 @@ router.patch(
         timeEstimate,
         dueDate,
         columnId,
-        boardId,
         sprintId,
         isInBacklog,
       } = req.body;
@@ -401,52 +339,23 @@ router.patch(
         return res.status(404).json({ error: 'Task not found' });
       }
 
-      // Only apply fields that were actually sent (avoid wiping dueDate/sprintId)
-      const data: Record<string, unknown> = {};
-      if (title !== undefined) data.title = title;
-      if (description !== undefined) data.description = description;
-      if (issueType !== undefined) data.issueType = issueType;
-      if (status !== undefined) data.status = status;
-      if (priority !== undefined) data.priority = priority;
-      if (storyPoints !== undefined) data.storyPoints = storyPoints;
-      if (timeEstimate !== undefined) {
-        if (!canSeeHours(req.user?.role)) {
-          return res.status(403).json({ error: 'Not allowed to set time estimates' });
-        }
-        data.timeEstimate = timeEstimate;
-      }
-      if (dueDate !== undefined) data.dueDate = dueDate ? new Date(dueDate) : null;
-      if (columnId !== undefined) data.columnId = columnId;
-      if (boardId !== undefined) data.boardId = boardId;
-      if (sprintId !== undefined) data.sprintId = sprintId;
-      if (isInBacklog !== undefined) data.isInBacklog = isInBacklog;
-
-      // When marking DONE and task is on a board, move it to a Done column if present
-      if (status === 'DONE' && (oldTask.boardId || boardId)) {
-        const boardIdForDone = (boardId || oldTask.boardId) as string;
-        const doneColumn = await prisma.column.findFirst({
-          where: {
-            boardId: boardIdForDone,
-            name: { equals: 'Done', mode: 'insensitive' },
-          },
-        });
-        if (doneColumn) {
-          data.columnId = doneColumn.id;
-          data.boardId = boardIdForDone;
-          data.isInBacklog = false;
-        }
-      }
-
-      // Completing a task must NEVER clear sprint membership
-      // (sprintId stays as-is unless explicitly sent)
-
       const task = await prisma.task.update({
         where: { id: req.params.id },
-        data,
+        data: {
+          title,
+          description,
+          issueType,
+          status,
+          priority,
+          storyPoints,
+          timeEstimate,
+          dueDate: dueDate ? new Date(dueDate) : null,
+          columnId,
+          sprintId,
+          isInBacklog,
+        },
         include: {
           column: true,
-          board: { select: { id: true, name: true } },
-          sprint: { select: { id: true, name: true, status: true, startDate: true, endDate: true } },
           assignments: {
             include: {
               user: {
@@ -460,13 +369,12 @@ router.patch(
               },
             },
           },
-          labels: true,
         },
       });
 
       // Create activity log for changes
       const activities = [];
-      if (title !== undefined && title !== oldTask.title) {
+      if (title && title !== oldTask.title) {
         activities.push({
           taskId: task.id,
           userId: req.userId!,
@@ -475,7 +383,7 @@ router.patch(
           newValue: `title: ${title}`,
         });
       }
-      if (status !== undefined && status !== oldTask.status) {
+      if (status && status !== oldTask.status) {
         activities.push({
           taskId: task.id,
           userId: req.userId!,
@@ -484,7 +392,7 @@ router.patch(
           newValue: status,
         });
       }
-      if (columnId !== undefined && columnId !== oldTask.columnId) {
+      if (columnId && columnId !== oldTask.columnId) {
         activities.push({
           taskId: task.id,
           userId: req.userId!,
@@ -500,7 +408,7 @@ router.patch(
         });
       }
 
-      res.json({ task: stripHoursFromTask(task, req.user?.role) });
+      res.json({ task });
     } catch (error) {
       console.error('Update task error:', error);
       res.status(500).json({ error: 'Failed to update task' });
@@ -559,18 +467,13 @@ router.post(
         },
       });
 
-      // Create activity log (store display name, not raw user id)
-      const assigneeName = [assignment.user.firstName, assignment.user.lastName]
-        .filter(Boolean)
-        .join(' ')
-        .trim() || assignment.user.email;
-
+      // Create activity log
       await prisma.taskActivity.create({
         data: {
           taskId: req.params.id,
           userId: req.userId!,
           action: 'assigned',
-          newValue: assigneeName,
+          newValue: userId,
         },
       });
 
@@ -588,11 +491,6 @@ router.delete(
   authenticate,
   async (req: AuthRequest, res) => {
     try {
-      const assignee = await prisma.user.findUnique({
-        where: { id: req.params.userId },
-        select: { firstName: true, lastName: true, email: true },
-      });
-
       await prisma.taskAssignment.deleteMany({
         where: {
           taskId: req.params.id,
@@ -600,18 +498,13 @@ router.delete(
         },
       });
 
-      const assigneeName = assignee
-        ? [assignee.firstName, assignee.lastName].filter(Boolean).join(' ').trim() || assignee.email
-        : req.params.userId;
-
-      // Create activity log (store display name, not raw user id)
+      // Create activity log
       await prisma.taskActivity.create({
         data: {
           taskId: req.params.id,
           userId: req.userId!,
           action: 'unassigned',
-          oldValue: assigneeName,
-          newValue: assigneeName,
+          oldValue: req.params.userId,
         },
       });
 
@@ -759,43 +652,33 @@ router.post(
         mentionedUsernames.push(match[1]);
       }
 
-      // Find users by username/email (from typed @tokens)
-      const mentionedUsers =
-        mentionedUsernames.length > 0
-          ? await prisma.user.findMany({
-              where: {
-                OR: [
-                  { email: { in: mentionedUsernames } },
-                  { firstName: { in: mentionedUsernames } },
-                  { lastName: { in: mentionedUsernames } },
-                ],
-              },
-              select: { id: true },
-            })
-          : [];
+      // Find users by username/email
+      const mentionedUsers = await prisma.user.findMany({
+        where: {
+          OR: [
+            { email: { in: mentionedUsernames } },
+            { firstName: { in: mentionedUsernames } },
+            { lastName: { in: mentionedUsernames } },
+          ],
+        },
+        select: { id: true },
+      });
 
-      // Dedupe — UI sends IDs and content @lookup can resolve the same person
-      const fromBody = Array.isArray(mentionedUserIds)
-        ? mentionedUserIds.filter((id: unknown): id is string => typeof id === 'string' && id.length > 0)
-        : [];
-      const allMentionedIds = Array.from(
-        new Set([...fromBody, ...mentionedUsers.map((u) => u.id)])
-      );
+      const allMentionedIds = [
+        ...mentionedUserIds,
+        ...mentionedUsers.map(u => u.id),
+      ];
 
       const comment = await prisma.taskComment.create({
         data: {
           taskId: req.params.id,
           userId: req.userId!,
           content,
-          ...(allMentionedIds.length > 0
-            ? {
-                mentions: {
-                  create: allMentionedIds.map((userId: string) => ({
-                    userId,
-                  })),
-                },
-              }
-            : {}),
+          mentions: {
+            create: allMentionedIds.map((userId: string) => ({
+              userId,
+            })),
+          },
         },
         include: {
           user: {
@@ -1063,27 +946,6 @@ router.patch(
         where: { id: req.params.id },
       });
 
-      if (!oldTask) {
-        return res.status(404).json({ error: 'Task not found' });
-      }
-
-      const column = await prisma.column.findUnique({ where: { id: columnId } });
-      const columnNameToStatus: Record<string, string> = {
-        'to do': 'TODO',
-        todo: 'TODO',
-        'in progress': 'IN_PROGRESS',
-        inprogress: 'IN_PROGRESS',
-        'in review': 'IN_REVIEW',
-        inreview: 'IN_REVIEW',
-        review: 'IN_REVIEW',
-        done: 'DONE',
-        blocked: 'BLOCKED',
-        blocker: 'BLOCKED',
-      };
-      const targetStatus = column?.name
-        ? columnNameToStatus[column.name.trim().toLowerCase()]
-        : undefined;
-
       const task = await prisma.task.update({
         where: { id: req.params.id },
         data: {
@@ -1091,16 +953,11 @@ router.patch(
           boardId,
           order,
           isInBacklog: false,
-          ...(targetStatus ? { status: targetStatus as any } : {}),
-        },
-        include: {
-          sprint: { select: { id: true, name: true, status: true } },
-          column: true,
         },
       });
 
       // Create activity log
-      if (oldTask.columnId !== columnId) {
+      if (oldTask && oldTask.columnId !== columnId) {
         await prisma.taskActivity.create({
           data: {
             taskId: task.id,
@@ -1108,18 +965,6 @@ router.patch(
             action: 'moved',
             oldValue: oldTask.columnId || 'null',
             newValue: columnId,
-          },
-        });
-      }
-
-      if (targetStatus && targetStatus !== oldTask.status) {
-        await prisma.taskActivity.create({
-          data: {
-            taskId: task.id,
-            userId: req.userId!,
-            action: 'status_changed',
-            oldValue: oldTask.status,
-            newValue: targetStatus,
           },
         });
       }

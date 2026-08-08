@@ -35,8 +35,6 @@ export function BoardView({ boardId, projectId }: BoardViewProps) {
   const [tasks, setTasks] = useState<any[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [sprintFilter, setSprintFilter] = useState<'all' | 'active'>('active');
-  const [activeSprintName, setActiveSprintName] = useState<string | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -59,14 +57,10 @@ export function BoardView({ boardId, projectId }: BoardViewProps) {
       const allTasks: any[] = [];
       response.data.board.columns?.forEach((col: any) => {
         col.tasks?.forEach((task: any) => {
-          allTasks.push({ ...task, columnId: col.id, projectId });
+          allTasks.push({ ...task, columnId: col.id });
         });
       });
       setTasks(allTasks);
-
-      const active = allTasks.find((t) => t.sprint?.status === 'ACTIVE')?.sprint;
-      setActiveSprintName(active?.name || null);
-      setSprintFilter(active ? 'active' : 'all');
     } catch (error) {
       console.error('Failed to fetch board:', error);
     } finally {
@@ -93,15 +87,40 @@ export function BoardView({ boardId, projectId }: BoardViewProps) {
       // Check if dropped on a column
       const targetColumn = columns.find(c => c.id === overId);
       if (targetColumn && targetColumn.id !== activeTask.columnId) {
-        // Move task to new column (status synced on server from column name)
+        // Move task to new column
         try {
+          // Map column name to status
+          const columnNameToStatus: Record<string, string> = {
+            'to do': 'TODO',
+            'todo': 'TODO',
+            'in progress': 'IN_PROGRESS',
+            'inprogress': 'IN_PROGRESS',
+            'in review': 'IN_REVIEW',
+            'inreview': 'IN_REVIEW',
+            'review': 'IN_REVIEW',
+            'done': 'DONE',
+            'blocked': 'BLOCKED',
+          };
+          
+          const targetStatus = columnNameToStatus[targetColumn.name.toLowerCase()];
+          
+          // Update task column and status
           await api.patch(`/tasks/${activeId}/move`, {
             columnId: targetColumn.id,
             boardId: boardId,
             order: 0,
           });
-
-          // Refresh board to get updated data (keeps sprint relation + DONE status)
+          
+          // Also update status if column name matches a status
+          if (targetStatus && targetStatus !== activeTask.status) {
+            try {
+              await api.patch(`/tasks/${activeId}`, { status: targetStatus });
+            } catch (statusError) {
+              console.error('Failed to update status:', statusError);
+            }
+          }
+          
+          // Refresh board to get updated data
           fetchBoard();
         } catch (error) {
           console.error('Failed to move task:', error);
@@ -167,56 +186,22 @@ export function BoardView({ boardId, projectId }: BoardViewProps) {
   }
 
   const activeTask = activeId ? tasks.find(t => t.id === activeId) : null;
-  const visibleTasks =
-    sprintFilter === 'active'
-      ? tasks.filter((t) => t.sprint?.status === 'ACTIVE')
-      : tasks;
 
   return (
-    <div className="h-full min-h-0 bg-gray-50 dark:bg-gray-900 flex flex-col">
-      <div className="px-4 py-2 flex items-center justify-between gap-3 flex-shrink-0">
-        <div className="text-sm text-gray-600 dark:text-gray-400">
-          {sprintFilter === 'active' && activeSprintName
-            ? `Showing active sprint: ${activeSprintName}`
-            : 'Showing all board tasks'}
-        </div>
-        <div className="flex items-center gap-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-0.5">
-          <button
-            onClick={() => setSprintFilter('active')}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-              sprintFilter === 'active'
-                ? 'bg-blue-600 text-white'
-                : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
-            }`}
-          >
-            Active sprint
-          </button>
-          <button
-            onClick={() => setSprintFilter('all')}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-              sprintFilter === 'all'
-                ? 'bg-blue-600 text-white'
-                : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
-            }`}
-          >
-            All tasks
-          </button>
-        </div>
-      </div>
-
+    <div className="h-full bg-gray-50 dark:bg-gray-900">
       <DndContext
         sensors={sensors}
         collisionDetection={closestCorners}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
       >
-        <div className="flex gap-3 overflow-x-auto pb-4 flex-1 min-h-0 px-4 items-stretch">
+        <div className="flex gap-3 overflow-x-auto pb-4 h-full px-4">
           <SortableContext
             items={columns.map(c => c.id)}
             strategy={horizontalListSortingStrategy}
           >
             {columns.map((column) => {
-              const columnTasks = visibleTasks.filter(t => t.columnId === column.id);
+              const columnTasks = tasks.filter(t => t.columnId === column.id);
               return (
                 <Column
                   key={column.id}
@@ -229,7 +214,7 @@ export function BoardView({ boardId, projectId }: BoardViewProps) {
           </SortableContext>
 
           {/* Add Column Button - Jira Style */}
-          <div className="w-[280px] min-w-[280px] max-w-[280px] flex-shrink-0">
+          <div className="min-w-[280px] flex-shrink-0">
             <button
               onClick={() => {
                 const name = prompt('Column name:');
@@ -245,8 +230,8 @@ export function BoardView({ boardId, projectId }: BoardViewProps) {
 
         <DragOverlay>
           {activeTask ? (
-            <div className="bg-white dark:bg-gray-800 p-3 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 w-[280px]">
-              <h4 className="font-medium text-sm text-gray-900 dark:text-white line-clamp-4 break-words">{activeTask.title}</h4>
+            <div className="bg-white dark:bg-gray-800 p-3 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 min-w-[280px]">
+              <h4 className="font-medium text-sm text-gray-900 dark:text-white">{activeTask.title}</h4>
             </div>
           ) : null}
         </DragOverlay>

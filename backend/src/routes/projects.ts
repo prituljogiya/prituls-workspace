@@ -2,15 +2,33 @@ import express from 'express';
 import { body, validationResult } from 'express-validator';
 import { authenticate, AuthRequest, authorize } from '../middleware/auth';
 import { prisma } from '../utils/prisma';
+import { githubRepoDisplay, parseGithubRepo } from '../utils/github';
 
 const router = express.Router();
 
-// Get all projects for user
+async function assertProjectAccess(projectId: string, userId: string, userRole?: string) {
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    select: {
+      id: true,
+      name: true,
+      githubRepo: true,
+      members: {
+        where: { userId },
+        select: { id: true },
+      },
+    },
+  });
+  if (!project) return null;
+  if (userRole !== 'SUPER_ADMIN' && project.members.length === 0) return null;
+  return project;
+}
+
+// Get all projects for user (super admin sees all)
 router.get('/', authenticate, async (req: AuthRequest, res) => {
   try {
-    const isSuperAdmin = req.user?.role === 'SUPER_ADMIN';
-    const projects = await prisma.project.findMany({
-      where: isSuperAdmin
+    const where =
+      req.user?.role === 'SUPER_ADMIN'
         ? { isArchived: false }
         : {
             members: {
@@ -19,13 +37,21 @@ router.get('/', authenticate, async (req: AuthRequest, res) => {
               },
             },
             isArchived: false,
-          },
+          };
+
+    const projects = await prisma.project.findMany({
+      where,
       include: {
         workspace: {
           select: {
             id: true,
             name: true,
             slug: true,
+            companyName: true,
+            bankName: true,
+            accountName: true,
+            accountNumber: true,
+            ifscCode: true,
           },
         },
         creator: {
@@ -35,15 +61,6 @@ router.get('/', authenticate, async (req: AuthRequest, res) => {
             firstName: true,
             lastName: true,
           },
-        },
-        boards: {
-          where: { isActive: true },
-          select: {
-            id: true,
-            name: true,
-            order: true,
-          },
-          orderBy: { order: 'asc' },
         },
         _count: {
           select: {
@@ -60,6 +77,135 @@ router.get('/', authenticate, async (req: AuthRequest, res) => {
   } catch (error) {
     console.error('Get projects error:', error);
     res.status(500).json({ error: 'Failed to get projects' });
+  }
+});
+
+// GitHub link info for project
+router.get('/:id/github', authenticate, async (req: AuthRequest, res) => {
+  try {
+    const project = await assertProjectAccess(req.params.id, req.userId!, req.user?.role);
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found or access denied' });
+    }
+
+    const parsed = parseGithubRepo(project.githubRepo);
+    res.json({
+      githubRepo: project.githubRepo || null,
+      parsed: parsed
+        ? {
+            owner: parsed.owner,
+            repo: parsed.repo,
+            fullName: githubRepoDisplay(parsed.owner, parsed.repo),
+            htmlUrl: `https://github.com/${parsed.owner}/${parsed.repo}`,
+          }
+        : null,
+      configured: Boolean(parsed),
+      hasToken: Boolean(process.env.GITHUB_TOKEN),
+    });
+  } catch (error) {
+    console.error('Get project GitHub config error:', error);
+    res.status(500).json({ error: 'Failed to get GitHub config' });
+  }
+});
+
+// List pull requests from the linked GitHub repo
+router.get('/:id/github/pulls', authenticate, async (req: AuthRequest, res) => {
+  try {
+    const project = await assertProjectAccess(req.params.id, req.userId!, req.user?.role);
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found or access denied' });
+    }
+
+    const parsed = parseGithubRepo(project.githubRepo);
+    if (!parsed) {
+      return res.status(400).json({
+        error: 'No GitHub repository linked to this project',
+        code: 'GITHUB_REPO_NOT_LINKED',
+      });
+    }
+
+    const state = (req.query.state as string) || 'open';
+    const perPage = Math.min(parseInt(String(req.query.per_page || '30'), 10) || 30, 100);
+
+    const headers: Record<string, string> = {
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+      'User-Agent': 'pms-portal',
+    };
+    if (process.env.GITHUB_TOKEN) {
+      headers.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
+    }
+
+    const url = `https://api.github.com/repos/${parsed.owner}/${parsed.repo}/pulls?state=${encodeURIComponent(state)}&per_page=${perPage}&sort=updated&direction=desc`;
+    const response = await fetch(url, { headers });
+
+    if (response.status === 404) {
+      return res.status(404).json({
+        error: 'GitHub repository not found (or private without GITHUB_TOKEN)',
+        code: 'GITHUB_REPO_NOT_FOUND',
+        repo: githubRepoDisplay(parsed.owner, parsed.repo),
+      });
+    }
+
+    if (response.status === 401 || response.status === 403) {
+      const body = await response.text();
+      return res.status(502).json({
+        error: 'GitHub authentication failed. Set a valid GITHUB_TOKEN in the backend .env',
+        code: 'GITHUB_AUTH_FAILED',
+        details: body.slice(0, 300),
+      });
+    }
+
+    if (!response.ok) {
+      const body = await response.text();
+      return res.status(502).json({
+        error: `GitHub API error (${response.status})`,
+        code: 'GITHUB_API_ERROR',
+        details: body.slice(0, 300),
+      });
+    }
+
+    const data = (await response.json()) as any[];
+    const pulls = data.map((pr) => ({
+      id: pr.id,
+      number: pr.number,
+      title: pr.title,
+      state: pr.state,
+      draft: Boolean(pr.draft),
+      htmlUrl: pr.html_url,
+      createdAt: pr.created_at,
+      updatedAt: pr.updated_at,
+      mergedAt: pr.merged_at,
+      closedAt: pr.closed_at,
+      user: pr.user
+        ? {
+            login: pr.user.login,
+            avatarUrl: pr.user.avatar_url,
+            htmlUrl: pr.user.html_url,
+          }
+        : null,
+      head: pr.head?.ref || null,
+      base: pr.base?.ref || null,
+      labels: (pr.labels || []).map((l: any) => ({
+        name: l.name,
+        color: l.color,
+      })),
+    }));
+
+    res.json({
+      repo: {
+        owner: parsed.owner,
+        repo: parsed.repo,
+        fullName: githubRepoDisplay(parsed.owner, parsed.repo),
+        htmlUrl: `https://github.com/${parsed.owner}/${parsed.repo}`,
+      },
+      state,
+      pulls,
+      count: pulls.length,
+    });
+  } catch (error) {
+    console.error('List GitHub PRs error:', error);
+    res.status(500).json({ error: 'Failed to fetch GitHub pull requests' });
   }
 });
 
@@ -127,7 +273,6 @@ router.get('/:id', authenticate, async (req: AuthRequest, res) => {
 router.post(
   '/',
   authenticate,
-  authorize('SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER'),
   [body('name').trim().notEmpty(), body('workspaceId').notEmpty()],
   async (req: AuthRequest, res) => {
     try {
@@ -193,18 +338,28 @@ router.patch(
   authorize('SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER'),
   async (req: AuthRequest, res) => {
     try {
-      const { name, description, color, invoicesEnabled } = req.body;
-      const isSuperAdmin = req.user?.role === 'SUPER_ADMIN';
+      const { name, description, color, githubRepo, invoicesEnabled } = req.body;
+
+      const data: Record<string, any> = {};
+      if (name !== undefined) data.name = name;
+      if (description !== undefined) data.description = description;
+      if (color !== undefined) data.color = color;
+      if (req.user?.role === 'SUPER_ADMIN' && typeof invoicesEnabled === 'boolean') {
+        data.invoicesEnabled = invoicesEnabled;
+      }
+      if (githubRepo !== undefined) {
+        const trimmed = typeof githubRepo === 'string' ? githubRepo.trim() : '';
+        if (trimmed && !parseGithubRepo(trimmed)) {
+          return res.status(400).json({
+            error: 'Invalid GitHub repo. Use owner/repo or a github.com URL',
+          });
+        }
+        data.githubRepo = trimmed || null;
+      }
 
       const project = await prisma.project.update({
         where: { id: req.params.id },
-        data: {
-          ...(name !== undefined ? { name } : {}),
-          ...(description !== undefined ? { description } : {}),
-          ...(color !== undefined ? { color } : {}),
-          // Only Super Admin can show/hide Invoices for a project
-          ...(isSuperAdmin && typeof invoicesEnabled === 'boolean' ? { invoicesEnabled } : {}),
-        },
+        data,
         include: {
           workspace: true,
           creator: {
@@ -286,58 +441,6 @@ router.post(
     } catch (error) {
       console.error('Add member error:', error);
       res.status(500).json({ error: 'Failed to add member' });
-    }
-  }
-);
-
-// Update project member role
-router.patch(
-  '/:id/members/:memberId',
-  authenticate,
-  authorize('SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER'),
-  [
-    body('role')
-      .isIn(['PROJECT_MANAGER', 'TEAM_MEMBER', 'VIEWER'])
-      .withMessage('Invalid project role'),
-  ],
-  async (req: AuthRequest, res) => {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
-      }
-
-      const existing = await prisma.projectMember.findFirst({
-        where: {
-          id: req.params.memberId,
-          projectId: req.params.id,
-        },
-      });
-
-      if (!existing) {
-        return res.status(404).json({ error: 'Member not found on this project' });
-      }
-
-      const member = await prisma.projectMember.update({
-        where: { id: req.params.memberId },
-        data: { role: req.body.role },
-        include: {
-          user: {
-            select: {
-              id: true,
-              email: true,
-              firstName: true,
-              lastName: true,
-              avatar: true,
-            },
-          },
-        },
-      });
-
-      res.json({ member });
-    } catch (error) {
-      console.error('Update member role error:', error);
-      res.status(500).json({ error: 'Failed to update member role' });
     }
   }
 );

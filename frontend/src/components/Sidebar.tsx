@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
-import { useTheme } from '@/contexts/ThemeContext';
 import {
   LayoutDashboard,
   FolderKanban,
@@ -14,15 +13,12 @@ import {
   Settings,
   Users,
   Building2,
-  LogOut,
   UserPlus,
   Plus,
-  Moon,
-  Sun,
   Clock,
   FileText,
-  KeyRound,
   BookOpen,
+  GitPullRequest,
   ChevronDown,
   ChevronRight,
   Columns3,
@@ -50,8 +46,7 @@ interface SidebarProps {
 
 export function Sidebar({ projectId }: SidebarProps) {
   const pathname = usePathname();
-  const { user, logout } = useAuth();
-  const { theme, toggleTheme } = useTheme();
+  const { user } = useAuth();
   const [invoicesEnabled, setInvoicesEnabled] = useState(false);
   const [projects, setProjects] = useState<SidebarProject[]>([]);
   const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>({});
@@ -143,8 +138,19 @@ export function Sidebar({ projectId }: SidebarProps) {
       .catch(() => {
         if (!cancelled) setInvoicesEnabled(false);
       });
+
+    const onToggle = (event: Event) => {
+      const detail = (event as CustomEvent).detail as
+        | { projectId?: string; enabled?: boolean }
+        | undefined;
+      if (!detail || detail.projectId !== extractedProjectId) return;
+      setInvoicesEnabled(!!detail.enabled);
+    };
+    window.addEventListener('pms:invoices-enabled', onToggle);
+
     return () => {
       cancelled = true;
+      window.removeEventListener('pms:invoices-enabled', onToggle);
     };
   }, [extractedProjectId, user]);
 
@@ -212,6 +218,11 @@ export function Sidebar({ projectId }: SidebarProps) {
           roles: ['SUPER_ADMIN', 'TEAM_MEMBER', 'WORKSPACE_OWNER', 'PROJECT_MANAGER'],
         },
         {
+          name: 'Pull Requests',
+          href: `/projects/${extractedProjectId}/pull-requests`,
+          icon: GitPullRequest,
+        },
+        {
           name: 'Invoices',
           href: `/projects/${extractedProjectId}/invoices`,
           icon: FileText,
@@ -250,26 +261,6 @@ export function Sidebar({ projectId }: SidebarProps) {
           <span className="font-bold text-lg text-gray-900 dark:text-white truncate">
             Pritul&apos;s workspace
           </span>
-        </Link>
-      </div>
-
-      {/* User Info */}
-      <div className="p-4 border-b border-gray-200 dark:border-gray-800">
-        <Link
-          href="/settings"
-          className="flex items-center gap-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 p-1 -m-1 transition-colors"
-        >
-          <div className="w-10 h-10 rounded-full bg-primary-500 flex items-center justify-center text-white text-sm font-medium">
-            {user?.firstName?.[0]}
-            {user?.lastName?.[0]}
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="font-medium text-sm truncate text-gray-900 dark:text-white">
-              {user?.firstName} {user?.lastName}
-            </p>
-            <p className="text-xs text-gray-600 dark:text-gray-400 truncate">{user?.email}</p>
-            <p className="text-[11px] text-blue-600 dark:text-blue-400 mt-0.5">Account settings</p>
-          </div>
         </Link>
       </div>
 
@@ -423,7 +414,12 @@ export function Sidebar({ projectId }: SidebarProps) {
               if (link.roles && user?.role && !hasRole(user.role, link.roles)) {
                 return null;
               }
-              if ((link as any).requiresInvoicesEnabled && !invoicesEnabled) {
+              if (
+                (link as any).requiresInvoicesEnabled &&
+                user?.role !== 'SUPER_ADMIN' &&
+                !['WORKSPACE_OWNER', 'PROJECT_MANAGER'].includes(user?.role || '') &&
+                !invoicesEnabled
+              ) {
                 return null;
               }
               if ((link as any).requiresInvoicesEnabled && user?.role && !canViewInvoices(user.role)) {
@@ -467,44 +463,6 @@ export function Sidebar({ projectId }: SidebarProps) {
           </div>
         </RoleGuard>
       </nav>
-
-      {/* Footer */}
-      <div className="p-4 border-t border-gray-200 dark:border-gray-800 space-y-2">
-        <Link
-          href="/settings"
-          className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
-            isActive('/settings')
-              ? 'bg-primary-600 text-white'
-              : 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800'
-          }`}
-        >
-          <KeyRound className="h-5 w-5" />
-          <span>Change Password</span>
-        </Link>
-        <button
-          onClick={toggleTheme}
-          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-        >
-          {theme === 'dark' ? (
-            <>
-              <Sun className="h-5 w-5" />
-              <span>Light Mode</span>
-            </>
-          ) : (
-            <>
-              <Moon className="h-5 w-5" />
-              <span>Dark Mode</span>
-            </>
-          )}
-        </button>
-        <button
-          onClick={logout}
-          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-        >
-          <LogOut className="h-5 w-5" />
-          <span>Logout</span>
-        </button>
-      </div>
     </div>
   );
 }

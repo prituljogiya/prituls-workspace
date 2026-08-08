@@ -1,13 +1,12 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRef, useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { LogIn, Shield, Mail, Lock } from 'lucide-react';
+import { Shield, Mail, Lock, LogIn } from 'lucide-react';
 
 const loginSchema = z.object({
   email: z.string().email('Invalid email address'),
@@ -17,10 +16,10 @@ const loginSchema = z.object({
 type LoginForm = z.infer<typeof loginSchema>;
 
 export default function AdminLoginPage() {
-  const router = useRouter();
-  const { login } = useAuth();
+  const { login, logout } = useAuth();
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const submittingRef = useRef(false);
 
   const {
     register,
@@ -31,33 +30,36 @@ export default function AdminLoginPage() {
   });
 
   const onSubmit = async (data: LoginForm) => {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     try {
       setLoading(true);
       setError('');
-      
-      // Login using the auth context
-      await login(data.email, data.password);
-      
-      // Wait a bit for localStorage to update
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
-      // Check if user is admin after login
-      const userStr = localStorage.getItem('user');
-      if (userStr) {
-        const user = JSON.parse(userStr);
-        if (user.role === 'SUPER_ADMIN' || user.role === 'WORKSPACE_OWNER' || user.role === 'PROJECT_MANAGER') {
-          router.push('/dashboard');
-        } else {
-          setError('Access denied. Admin privileges required. You need SUPER_ADMIN, WORKSPACE_OWNER, or PROJECT_MANAGER role.');
-          localStorage.removeItem('token');
-          localStorage.removeItem('user');
-        }
-      } else {
-        setError('Login failed. Please check your credentials.');
+
+      const user = await login(data.email, data.password);
+      if (
+        user.role === 'SUPER_ADMIN' ||
+        user.role === 'WORKSPACE_OWNER' ||
+        user.role === 'PROJECT_MANAGER'
+      ) {
+        window.location.assign('/dashboard');
+        return;
       }
+
+      logout();
+      setError(
+        'Access denied. Admin privileges required. You need SUPER_ADMIN, WORKSPACE_OWNER, or PROJECT_MANAGER role.'
+      );
+      submittingRef.current = false;
+      setLoading(false);
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Login failed. Please check your credentials.');
-    } finally {
+      submittingRef.current = false;
+      setError(
+        err.message ||
+          err.response?.data?.error ||
+          err.response?.data?.message ||
+          'Login failed. Please check your credentials.'
+      );
       setLoading(false);
     }
   };

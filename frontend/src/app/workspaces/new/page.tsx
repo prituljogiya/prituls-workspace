@@ -125,7 +125,7 @@ export default function NewWorkspacePage() {
                 className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-400"
                 placeholder="my-workspace"
               />
-              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Lowercase letters, numbers, and hyphens only</p>
+              <p className="mt-1 text-xs text-gray-500">Lowercase letters, numbers, and hyphens only</p>
               {errors.slug && (
                 <p className="mt-1 text-sm text-red-600">{errors.slug.message}</p>
               )}
@@ -154,7 +154,7 @@ export default function NewWorkspacePage() {
               </button>
               <Link
                 href="/dashboard"
-                className="px-6 py-2 text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600"
+                className="px-6 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
               >
                 Cancel
               </Link>

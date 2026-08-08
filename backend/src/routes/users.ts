@@ -1,5 +1,5 @@
 import express from 'express';
-import { authenticate, AuthRequest } from '../middleware/auth';
+import { authenticate, AuthRequest, invalidateAuthUserCache } from '../middleware/auth';
 import { prisma } from '../utils/prisma';
 
 const router = express.Router();
@@ -78,6 +78,8 @@ router.patch('/:id', authenticate, async (req: AuthRequest, res) => {
       },
     });
 
+    invalidateAuthUserCache(user.id);
+
     res.json({ user });
   } catch (error) {
     console.error('Update user error:', error);
@@ -97,6 +99,8 @@ router.delete('/:id', authenticate, async (req: AuthRequest, res) => {
       where: { id: req.params.id },
       data: { isActive: false },
     });
+
+    invalidateAuthUserCache(req.params.id);
 
     res.json({ message: 'User deleted' });
   } catch (error) {

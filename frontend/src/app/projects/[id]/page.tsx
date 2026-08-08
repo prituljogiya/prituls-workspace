@@ -51,8 +51,8 @@ export default function ProjectPage() {
 
   return (
     <Layout projectId={params.id as string}>
-      <div className="min-h-screen">
-        <header className="bg-white dark:bg-gray-800 shadow-sm border-b dark:border-gray-700 sticky top-0 z-10">
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+        <header className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700 sticky top-0 z-10">
           <div className="px-6 py-4">
             <div className="flex items-center justify-between">
               <div>
@@ -62,14 +62,14 @@ export default function ProjectPage() {
               <div className="flex items-center gap-2">
                 <Link
                   href={`/projects/${params.id}/members`}
-                  className="flex items-center gap-2 px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
+                  className="flex items-center gap-2 px-4 py-2 text-sm text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white"
                 >
                   <Users className="h-4 w-4" />
                   {project.members.length} Members
                 </Link>
                 <Link
                   href={`/projects/${params.id}/settings`}
-                  className="flex items-center gap-2 px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
+                  className="flex items-center gap-2 px-4 py-2 text-sm text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white"
                 >
                   <Settings className="h-4 w-4" />
                   Settings

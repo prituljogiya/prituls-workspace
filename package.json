@@ -21,8 +21,8 @@
     "iconv-lite": "^0.7.0"
   },
   "devDependencies": {
-    "@vercel/node": "^3.2.29",
     "concurrently": "^8.2.2",
+    "@vercel/node": "^3.2.29",
     "prisma": "^5.22.0"
   },
   "allowScripts": {

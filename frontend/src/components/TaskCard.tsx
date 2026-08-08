@@ -28,10 +28,10 @@ export function TaskCard({ task }: TaskCardProps) {
 
   const getIssueTypeColor = (type: string) => {
     switch (type) {
-      case 'BUG': return 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200';
+      case 'BUG': return 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300';
       case 'STORY': return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300';
       case 'EPIC': return 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300';
-      default: return 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:bg-gray-700 dark:text-gray-300';
+      default: return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300';
     }
   };
 
@@ -47,7 +47,7 @@ export function TaskCard({ task }: TaskCardProps) {
       ref={setNodeRef}
       style={style}
       {...attributes}
-      className="bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-600 hover:shadow-md transition-all group relative overflow-hidden"
+      className="bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-600 hover:shadow-md transition-all group relative"
     >
       {/* Drag Handle - Small area on the left for dragging */}
       <div
@@ -84,16 +84,9 @@ export function TaskCard({ task }: TaskCardProps) {
       </div>
 
       {/* Title */}
-      <h4 className="font-medium text-gray-900 dark:text-white text-sm mb-2 line-clamp-4 break-words overflow-hidden group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors" title={task.title}>
+      <h4 className="font-medium text-gray-900 dark:text-white text-sm mb-2 line-clamp-2 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
         {task.title}
       </h4>
-
-      {task.sprint?.name && (
-        <p className="text-[11px] text-indigo-600 dark:text-indigo-400 mb-2 truncate">
-          {task.sprint.name}
-          {task.sprint.status === 'ACTIVE' ? ' · Active' : ''}
-        </p>
-      )}
 
       {/* Labels */}
       {task.labels && task.labels.length > 0 && (

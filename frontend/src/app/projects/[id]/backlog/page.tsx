@@ -53,25 +53,7 @@ export default function BacklogPage() {
 
   const moveToBoard = async (taskId: string) => {
     try {
-      const boardsRes = await api.get(`/boards/project/${params.id}`);
-      const board = boardsRes.data.boards?.[0];
-      if (!board) {
-        alert('Create a board first, then move tasks onto it.');
-        return;
-      }
-      const boardDetail = await api.get(`/boards/${board.id}`);
-      const columns = boardDetail.data.board?.columns || [];
-      const todo =
-        columns.find((c: any) => /^(to\s*do|todo)$/i.test(c.name?.trim() || '')) || columns[0];
-      if (!todo) {
-        alert('Board has no columns');
-        return;
-      }
-      await api.patch(`/tasks/${taskId}`, {
-        isInBacklog: false,
-        boardId: board.id,
-        columnId: todo.id,
-      });
+      await api.patch(`/tasks/${taskId}`, { isInBacklog: false });
       fetchBacklog();
     } catch (error: any) {
       alert(error.response?.data?.error || 'Failed to move task');
@@ -131,8 +113,8 @@ export default function BacklogPage() {
 
   return (
     <Layout projectId={params.id as string}>
-      <div className="min-h-screen">
-        <header className="bg-white dark:bg-gray-800 shadow-sm border-b dark:border-gray-700 sticky top-0 z-10">
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+        <header className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700 sticky top-0 z-10">
           <div className="px-6 py-4">
             <div className="flex items-center justify-between">
               <div>
@@ -142,7 +124,7 @@ export default function BacklogPage() {
               <RoleGuard allowedRoles={['SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER', 'TEAM_MEMBER']}>
                 <div className="flex items-center gap-2">
                   {selectedTasks.length > 0 && (
-                    <RoleGuard allowedRoles={['SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER', 'TEAM_MEMBER']}>
+                    <RoleGuard allowedRoles={['SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER']}>
                       <button
                         onClick={() => setShowMoveModal(true)}
                         className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
@@ -169,7 +151,7 @@ export default function BacklogPage() {
           {/* Filters */}
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 mb-6">
           <div className="flex items-center gap-4">
-            <Filter className="h-5 w-5 text-gray-500 dark:text-gray-400" />
+            <Filter className="h-5 w-5 text-gray-500" />
             <select
               value={filter.issueType}
               onChange={(e) => setFilter({ ...filter, issueType: e.target.value })}
@@ -296,33 +278,28 @@ export default function BacklogPage() {
 
       {/* Move to Sprint Modal */}
       {showMoveModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-md">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-md border border-gray-200 dark:border-gray-700">
             <h2 className="text-xl font-bold mb-4 text-gray-900 dark:text-white">Move to Sprint</h2>
             <div className="space-y-2 mb-4">
-              {sprints.filter(s => s.status === 'PLANNED' || s.status === 'ACTIVE').length === 0 ? (
-                <p className="text-sm text-gray-500 dark:text-gray-400 py-4 text-center">
-                  No planned or active sprint. Create one under Sprints first.
-                </p>
-              ) : (
-                sprints.filter(s => s.status === 'PLANNED' || s.status === 'ACTIVE').map((sprint) => (
-                  <button
-                    key={sprint.id}
-                    onClick={() => moveToSprint(sprint.id)}
-                    className="w-full text-left px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-900 dark:text-white"
-                  >
-                    <div className="font-medium">{sprint.name}</div>
-                    <div className="text-sm text-gray-500 dark:text-gray-400">
-                      {sprint.status} • {sprint.stats?.totalTasks ?? sprint._count?.tasks ?? 0} tasks
-                      {sprint.stats?.storyPoints != null ? ` • ${sprint.stats.storyPoints} SP` : ''}
-                    </div>
-                  </button>
-                ))
-              )}
+              {sprints.filter(s => s.status === 'PLANNED' || s.status === 'ACTIVE').map((sprint) => (
+                <button
+                  key={sprint.id}
+                  type="button"
+                  onClick={() => moveToSprint(sprint.id)}
+                  className="w-full text-left px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-900 dark:text-white"
+                >
+                  <div className="font-medium">{sprint.name}</div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">
+                    {sprint.status} • {sprint._count?.tasks || 0} tasks
+                  </div>
+                </button>
+              ))}
             </div>
             <button
+              type="button"
               onClick={() => setShowMoveModal(false)}
-              className="w-full px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600"
+              className="w-full px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600"
             >
               Cancel
             </button>

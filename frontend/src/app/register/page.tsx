@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { useForm } from 'react-hook-form';
@@ -19,7 +18,6 @@ const registerSchema = z.object({
 type RegisterForm = z.infer<typeof registerSchema>;
 
 export default function RegisterPage() {
-  const router = useRouter();
   const { register: registerUser } = useAuth();
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -37,17 +35,16 @@ export default function RegisterPage() {
       setLoading(true);
       setError('');
       await registerUser(data);
-      router.push('/dashboard');
+      window.location.assign('/dashboard');
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Registration failed');
-    } finally {
+      setError(err.message || err.response?.data?.error || 'Registration failed');
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-50 to-primary-100 px-4">
-      <div className="max-w-md w-full space-y-8 bg-white dark:bg-gray-800 p-8 rounded-lg shadow-lg">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-50 to-primary-100 dark:from-gray-900 dark:to-gray-800 px-4">
+      <div className="max-w-md w-full space-y-8 bg-white dark:bg-gray-800 p-8 rounded-lg shadow-lg border border-transparent dark:border-gray-700">
         <div className="text-center">
           <h2 className="text-3xl font-bold text-gray-900 dark:text-white">Create Account</h2>
           <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">Sign up to get started</p>
@@ -55,7 +52,7 @@ export default function RegisterPage() {
 
         <form className="mt-8 space-y-6" onSubmit={handleSubmit(onSubmit)}>
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
+            <div className="bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 px-4 py-3 rounded">
               {error}
             </div>
           )}
@@ -145,7 +142,7 @@ export default function RegisterPage() {
           <div className="text-center">
             <p className="text-sm text-gray-600 dark:text-gray-400">
               Already have an account?{' '}
-              <Link href="/login" className="text-primary-600 hover:text-primary-500 font-medium">
+              <Link href="/login" className="text-primary-600 dark:text-primary-400 hover:text-primary-500 font-medium">
                 Sign in
               </Link>
             </p>

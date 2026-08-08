@@ -1,19 +1,28 @@
 'use client';
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
+import { useTimer } from '@/contexts/TimerContext';
 import api from '@/lib/api';
 import { Layout } from '@/components/Layout';
 import { ArrowLeft, User, Calendar, Tag, CheckSquare, Paperclip, MessageSquare, Clock, Edit2, Trash2, Save, X, Play, Square, Sparkles, Smile, Image as ImageIcon, AtSign, Rocket, XCircle } from 'lucide-react';
 import { format } from 'date-fns';
-import { hasRole, canUseTimeTracking, canHardDeleteTime } from '@/utils/rbac';
 
 export default function TaskDetailPage() {
   const router = useRouter();
   const params = useParams();
   const { user, loading: authLoading } = useAuth();
+  const {
+    activeTimer,
+    elapsedTime,
+    startTimer,
+    stopTimer,
+    formatTime,
+    refreshActiveTimer,
+    autoStoppedMessage,
+  } = useTimer();
   const [task, setTask] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
@@ -25,14 +34,6 @@ export default function TaskDetailPage() {
   const [allUsers, setAllUsers] = useState<any[]>([]);
   const [selectedUserId, setSelectedUserId] = useState('');
   const [uploadingFile, setUploadingFile] = useState(false);
-  const [activeTimer, setActiveTimer] = useState<any>(null);
-  const [elapsedTime, setElapsedTime] = useState(0);
-  const [timeEntries, setTimeEntries] = useState<any[]>([]);
-  const [manualHours, setManualHours] = useState('');
-  const [manualDescription, setManualDescription] = useState('');
-  const [savingManualTime, setSavingManualTime] = useState(false);
-  const [editingTimeId, setEditingTimeId] = useState<string | null>(null);
-  const [editHours, setEditHours] = useState('');
   const [subtasks, setSubtasks] = useState<any[]>([]);
   const [generatingSubtasks, setGeneratingSubtasks] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState<string | null>(null);
@@ -40,6 +41,14 @@ export default function TaskDetailPage() {
   const [mentionQuery, setMentionQuery] = useState('');
   const [commentMentions, setCommentMentions] = useState<string[]>([]);
   const [sprints, setSprints] = useState<any[]>([]);
+  const [timeEntries, setTimeEntries] = useState<any[]>([]);
+  const [manualHours, setManualHours] = useState('');
+  const [manualNote, setManualNote] = useState('');
+  const [addingHours, setAddingHours] = useState(false);
+  const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
+  const [editEntryHours, setEditEntryHours] = useState('');
+  const [editEntryNote, setEditEntryNote] = useState('');
+  const [expandedNotes, setExpandedNotes] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -49,47 +58,18 @@ export default function TaskDetailPage() {
     if (user && params.taskId) {
       fetchTask();
       fetchUsers();
-      if (canUseTimeTracking(user.role)) {
-        fetchActiveTimer();
-        fetchTimeEntries();
-      }
+      refreshActiveTimer();
       fetchSubtasks();
       fetchSprints();
+      fetchTimeEntries();
     }
   }, [user, authLoading, params.taskId, router]);
 
-  // Periodically refresh active timer to keep it in sync (every 30 seconds)
   useEffect(() => {
-    if (!user || !canUseTimeTracking(user.role)) return;
-    
-    const interval = setInterval(() => {
-      fetchActiveTimer();
-    }, 30000); // Refresh every 30 seconds
-
-    return () => clearInterval(interval);
-  }, [user]);
-
-  useEffect(() => {
-    let interval: NodeJS.Timeout;
-    if (activeTimer && activeTimer.startTime) {
-      // Calculate initial elapsed time
-      const start = new Date(activeTimer.startTime).getTime();
-      const now = Date.now();
-      setElapsedTime(Math.floor((now - start) / 1000));
-      
-      // Update every second
-      interval = setInterval(() => {
-        const start = new Date(activeTimer.startTime).getTime();
-        const now = Date.now();
-        setElapsedTime(Math.floor((now - start) / 1000));
-      }, 1000);
-    } else {
-      setElapsedTime(0);
+    if (autoStoppedMessage && params.taskId) {
+      fetchTimeEntries();
     }
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [activeTimer]);
+  }, [autoStoppedMessage, params.taskId]);
 
   const fetchTask = async () => {
     try {
@@ -119,25 +99,10 @@ export default function TaskDetailPage() {
 
   const fetchUsers = async () => {
     try {
-      // Prefer project members for assignee + mentions (lighter than full user list)
-      const projectRes = await api.get(`/projects/${params.id}`);
-      const members = (projectRes.data.project?.members || [])
-        .map((m: any) => m.user)
-        .filter(Boolean);
-      if (members.length > 0) {
-        setAllUsers(members);
-        return;
-      }
       const response = await api.get('/users');
-      setAllUsers(response.data.users || []);
+      setAllUsers(response.data.users);
     } catch (error) {
       console.error('Failed to fetch users:', error);
-      try {
-        const response = await api.get('/users');
-        setAllUsers(response.data.users || []);
-      } catch (e) {
-        console.error('Failed to fetch all users:', e);
-      }
     }
   };
 
@@ -259,141 +224,38 @@ export default function TaskDetailPage() {
 
   const handleCommentChange = (value: string) => {
     setNewComment(value);
+    // Check for @ mentions
     const atIndex = value.lastIndexOf('@');
-    if (atIndex === -1) {
-      setShowMentionPicker(false);
-      setMentionQuery('');
-      return;
-    }
-    const after = value.slice(atIndex + 1);
-    // Active mention: no whitespace after @ yet
-    if (/^[\w.-]*$/.test(after)) {
-      setMentionQuery(after);
-      setShowMentionPicker(true);
+    if (atIndex !== -1) {
+      const query = value.substring(atIndex + 1).split(/\s/)[0];
+      if (query.length > 0) {
+        setMentionQuery(query);
+        setShowMentionPicker(true);
+      } else {
+        setShowMentionPicker(false);
+      }
     } else {
       setShowMentionPicker(false);
+    }
+  };
+
+  const insertMention = (userId: string, userName: string) => {
+    const atIndex = newComment.lastIndexOf('@');
+    if (atIndex !== -1) {
+      const before = newComment.substring(0, atIndex);
+      const after = newComment.substring(atIndex + mentionQuery.length + 1);
+      setNewComment(`${before}@${userName} ${after}`);
+      setCommentMentions([...commentMentions, userId]);
+      setShowMentionPicker(false);
       setMentionQuery('');
     }
   };
 
-  const insertMention = (userId: string, firstName: string) => {
-    const atIndex = newComment.lastIndexOf('@');
-    if (atIndex === -1) return;
-    const before = newComment.slice(0, atIndex);
-    const after = newComment.slice(atIndex + 1).replace(/^[\w.-]*/, '');
-    setNewComment(`${before}@${firstName}${after.startsWith(' ') || after === '' ? after || ' ' : ` ${after}`}`);
-    setCommentMentions((prev) => (prev.includes(userId) ? prev : [...prev, userId]));
-    setShowMentionPicker(false);
-    setMentionQuery('');
-  };
-
-  // Prefer project members for @ mentions (lighter than all workspace users)
-  const mentionCandidates = allUsers || [];
-
-  const filteredUsers = mentionCandidates
-    .filter(
-      (u: any) =>
-        !mentionQuery ||
-        u.firstName?.toLowerCase().includes(mentionQuery.toLowerCase()) ||
-        u.lastName?.toLowerCase().includes(mentionQuery.toLowerCase()) ||
-        u.email?.toLowerCase().includes(mentionQuery.toLowerCase())
-    )
-    .slice(0, 6);
-
-  const renderCommentBody = (comment: any) => {
-    const content: string = comment.content || '';
-    const mentions: any[] = comment.mentions || [];
-    if (!mentions.length) {
-      return <span>{content}</span>;
-    }
-
-    const labels = mentions
-      .map((m: any) => ({
-        id: m.user.id,
-        email: m.user.email,
-        first: m.user.firstName as string,
-        full: `${m.user.firstName} ${m.user.lastName}`.trim(),
-      }))
-      .sort((a: any, b: any) => b.full.length - a.full.length);
-
-    const escaped = labels
-      .flatMap((l: any) => [`@${l.full}`, `@${l.first}`])
-      .map((s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-    const pattern = new RegExp(escaped.join('|'), 'g');
-
-    const nodes: ReactNode[] = [];
-    let last = 0;
-    let match: RegExpExecArray | null;
-    let key = 0;
-    while ((match = pattern.exec(content)) !== null) {
-      if (match.index > last) {
-        nodes.push(<span key={`t-${key++}`}>{content.slice(last, match.index)}</span>);
-      }
-      const token = match[0];
-      const label = labels.find((l: any) => token === `@${l.full}` || token === `@${l.first}`);
-      if (label) {
-        nodes.push(
-          <Link
-            key={`m-${key++}`}
-            href={`/projects/${params.id}/members`}
-            title={label.email}
-            className="inline-flex items-center px-1.5 py-0.5 mx-0.5 rounded-md bg-blue-50 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 font-medium text-sm hover:bg-blue-100 dark:hover:bg-blue-900/70 hover:underline"
-          >
-            @{label.full}
-          </Link>
-        );
-      } else {
-        nodes.push(<span key={`t-${key++}`}>{token}</span>);
-      }
-      last = match.index + token.length;
-    }
-    if (last < content.length) {
-      nodes.push(<span key={`t-${key++}`}>{content.slice(last)}</span>);
-    }
-    return <>{nodes}</>;
-  };
-
-  /** Resolve activity values — assigned/unassigned/sprint used to store raw ids */
-  const formatActivityValue = (action: string, value?: string | null) => {
-    if (!value) return null;
-    if (action === 'assigned' || action === 'unassigned') {
-      const fromUsers = allUsers.find((u) => u.id === value);
-      if (fromUsers) {
-        return `${fromUsers.firstName} ${fromUsers.lastName}`.trim() || fromUsers.email;
-      }
-      const fromAssignees = task?.assignments?.find((a: any) => a.userId === value || a.user?.id === value);
-      if (fromAssignees?.user) {
-        return `${fromAssignees.user.firstName} ${fromAssignees.user.lastName}`.trim() || fromAssignees.user.email;
-      }
-    }
-    if (
-      action === 'added_to_sprint' ||
-      action === 'removed_from_sprint' ||
-      action === 'moved_to_next_sprint'
-    ) {
-      const fromList = sprints.find((s) => s.id === value);
-      if (fromList?.name) return fromList.name;
-      if (task?.sprint?.id === value && task.sprint.name) return task.sprint.name;
-      // Already a stored name (not a cuid-like id)
-      if (!/^[a-z0-9]{20,}$/i.test(value)) return value;
-      return value;
-    }
-    return value;
-  };
-
-  const formatActivityAction = (action: string) => action.replace(/_/g, ' ');
-
-  const formatActivityLine = (activity: any) => {
-    const action = formatActivityAction(activity.action);
-    if (activity.action === 'moved_to_next_sprint') {
-      const from = formatActivityValue(activity.action, activity.oldValue);
-      const to = formatActivityValue(activity.action, activity.newValue);
-      if (from && to) return `${action}: ${from} → ${to}`;
-      if (to) return `${action}: ${to}`;
-    }
-    const value = formatActivityValue(activity.action, activity.newValue || activity.oldValue);
-    return value ? `${action}: ${value}` : action;
-  };
+  const filteredUsers = allUsers.filter(user => 
+    user.firstName.toLowerCase().includes(mentionQuery.toLowerCase()) ||
+    user.lastName.toLowerCase().includes(mentionQuery.toLowerCase()) ||
+    user.email.toLowerCase().includes(mentionQuery.toLowerCase())
+  ).slice(0, 5);
 
   const addChecklistItem = async () => {
     if (!newChecklistItem.trim()) return;
@@ -426,15 +288,6 @@ export default function TaskDetailPage() {
     }
   };
 
-  const removeLabel = async (labelId: string) => {
-    try {
-      await api.delete(`/tasks/${params.taskId}/labels/${labelId}`);
-      fetchTask();
-    } catch (error: any) {
-      alert(error.response?.data?.error || 'Failed to remove label');
-    }
-  };
-
   const setDueDate = async (date: string) => {
     try {
       await api.patch(`/tasks/${params.taskId}`, { dueDate: date });
@@ -444,25 +297,17 @@ export default function TaskDetailPage() {
     }
   };
 
-  const fetchActiveTimer = async () => {
+  const handleStartTimer = async () => {
     try {
-      const response = await api.get('/time-tracking/timer/active');
-      if (response.data.entry) {
-        setActiveTimer(response.data.entry);
-        // Calculate elapsed time immediately when fetching
-        if (response.data.entry.startTime) {
-          const start = new Date(response.data.entry.startTime).getTime();
-          const now = Date.now();
-          setElapsedTime(Math.floor((now - start) / 1000));
-        }
-      } else {
-        setActiveTimer(null);
-        setElapsedTime(0);
-      }
-    } catch (error) {
-      setActiveTimer(null);
-      setElapsedTime(0);
+      await startTimer(params.taskId as string);
+    } catch {
+      // error already alerted in context
     }
+  };
+
+  const handleStopTimer = async () => {
+    await stopTimer({ promptDescription: true });
+    fetchTimeEntries();
   };
 
   const fetchTimeEntries = async () => {
@@ -474,104 +319,68 @@ export default function TaskDetailPage() {
     }
   };
 
-  const startTimer = async () => {
-    if (task?.status === 'DONE') {
-      alert('This task is completed. Add time manually instead of starting a timer.');
+  const totalLoggedHours = timeEntries.reduce((sum, e) => sum + (e.hours || 0), 0);
+
+  const addManualHours = async () => {
+    const hours = parseFloat(manualHours);
+    if (!manualHours || Number.isNaN(hours) || hours <= 0) {
+      alert('Please enter hours greater than 0');
       return;
     }
     try {
-      const response = await api.post('/time-tracking/timer/start', { taskId: params.taskId });
-      setActiveTimer(response.data.entry);
-      setElapsedTime(0);
-    } catch (error: any) {
-      alert(error.response?.data?.error || 'Failed to start timer');
-    }
-  };
-
-  const stopTimer = async () => {
-    if (!activeTimer) return;
-    try {
-      const description = prompt('Add a description (optional):');
-      await api.post('/time-tracking/timer/stop', {
-        entryId: activeTimer.id,
-        description: description || '',
-      });
-      setActiveTimer(null);
-      setElapsedTime(0);
-      fetchTimeEntries();
-    } catch (error: any) {
-      alert(error.response?.data?.error || 'Failed to stop timer');
-    }
-  };
-
-  const addManualTime = async () => {
-    if (!manualHours || parseFloat(manualHours) <= 0) {
-      alert('Enter hours greater than 0');
-      return;
-    }
-    try {
-      setSavingManualTime(true);
+      setAddingHours(true);
       await api.post('/time-tracking', {
         taskId: params.taskId,
-        hours: parseFloat(manualHours),
-        description: manualDescription,
-        date: new Date().toISOString(),
+        hours,
+        description: manualNote.trim() || undefined,
+        isBillable: true,
       });
       setManualHours('');
-      setManualDescription('');
-      fetchTimeEntries();
+      setManualNote('');
+      await fetchTimeEntries();
     } catch (error: any) {
-      alert(error.response?.data?.error || 'Failed to add time');
+      alert(error.response?.data?.error || 'Failed to add hours');
     } finally {
-      setSavingManualTime(false);
+      setAddingHours(false);
     }
   };
 
-  const saveTimeEdit = async (entryId: string) => {
+  const startEditEntry = (entry: any) => {
+    setEditingEntryId(entry.id);
+    setEditEntryHours(String(entry.hours ?? ''));
+    setEditEntryNote(entry.description || '');
+  };
+
+  const saveEditEntry = async () => {
+    if (!editingEntryId) return;
+    const hours = parseFloat(editEntryHours);
+    if (!editEntryHours || Number.isNaN(hours) || hours < 0) {
+      alert('Please enter valid hours');
+      return;
+    }
     try {
-      await api.patch(`/time-tracking/${entryId}`, {
-        hours: parseFloat(editHours),
+      await api.patch(`/time-tracking/${editingEntryId}`, {
+        hours,
+        description: editEntryNote.trim() || null,
       });
-      setEditingTimeId(null);
-      fetchTimeEntries();
+      setEditingEntryId(null);
+      setEditEntryHours('');
+      setEditEntryNote('');
+      await fetchTimeEntries();
     } catch (error: any) {
-      alert(error.response?.data?.error || 'Failed to update time');
+      alert(error.response?.data?.error || 'Failed to update time entry');
     }
   };
 
   const deleteTimeEntry = async (entryId: string) => {
-    if (user?.role && canHardDeleteTime(user.role)) {
-      if (!confirm('Delete this time entry?')) return;
-      try {
-        await api.delete(`/time-tracking/${entryId}`);
-        fetchTimeEntries();
-      } catch (error: any) {
-        alert(error.response?.data?.error || 'Failed to delete time entry');
-      }
-      return;
-    }
-
-    const reason = window.prompt(
-      'Request admin approval to delete this time entry. Optional reason:'
-    );
-    if (reason === null) return;
+    if (!confirm('Delete this time entry?')) return;
     try {
-      await api.post(`/time-tracking/${entryId}/request-delete`, { reason });
-      alert('Deletion request sent to admin.');
-      fetchTimeEntries();
+      await api.delete(`/time-tracking/${entryId}`);
+      await fetchTimeEntries();
     } catch (error: any) {
-      alert(error.response?.data?.error || 'Failed to request deletion');
+      alert(error.response?.data?.error || 'Failed to delete time entry');
     }
   };
-
-  const formatTime = (seconds: number) => {
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const secs = seconds % 60;
-    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-  };
-
-  const totalLoggedHours = timeEntries.reduce((sum, e) => sum + (e.hours || 0), 0);
 
   const fetchSubtasks = async () => {
     try {
@@ -595,11 +404,7 @@ export default function TaskDetailPage() {
         taskId: params.taskId as string,
       });
       await fetchSubtasks(); // Refresh subtasks list
-      if (response.data?.warning) {
-        alert(`Subtasks generated (local fallback).\n\n${response.data.warning}`);
-      } else {
-        alert('Subtasks generated successfully!');
-      }
+      alert('Subtasks generated successfully!');
     } catch (error: any) {
       const errorMessage = error.response?.data?.error || 
                           error.response?.data?.errors?.map((e: any) => e.msg).join(', ') ||
@@ -646,7 +451,7 @@ export default function TaskDetailPage() {
       case 'BUG': return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200';
       case 'STORY': return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200';
       case 'EPIC': return 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200';
-      default: return 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:bg-gray-700 dark:text-gray-200';
+      default: return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200';
     }
   };
 
@@ -656,7 +461,7 @@ export default function TaskDetailPage() {
       case 'DONE': return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200';
       case 'BLOCKED': return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200';
       case 'IN_REVIEW': return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200';
-      default: return 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:bg-gray-700 dark:text-gray-200';
+      default: return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200';
     }
   };
 
@@ -715,7 +520,7 @@ export default function TaskDetailPage() {
                   >
                     <Edit2 className="h-4 w-4" />
                   </button>
-                  {user?.role && hasRole(user.role, ['SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER']) && (
+                  {user?.role && ['SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER'].includes(user.role) && (
                     <button
                       onClick={deleteTask}
                       className="p-1.5 text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
@@ -780,7 +585,7 @@ export default function TaskDetailPage() {
                             type="checkbox"
                             checked={item.isChecked}
                             onChange={() => toggleChecklistItem(item.id, item.isChecked)}
-                            className="mt-0.5 w-4 h-4 text-blue-600 border-gray-300 dark:border-gray-600 rounded focus:ring-blue-500"
+                            className="mt-0.5 w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                           />
                           <span className={`text-sm flex-1 ${item.isChecked ? 'line-through text-gray-400 dark:text-gray-500' : 'text-gray-700 dark:text-gray-300'}`}>
                             {item.text}
@@ -828,7 +633,23 @@ export default function TaskDetailPage() {
                           <p className="text-xs text-gray-500 dark:text-gray-400">{format(new Date(comment.createdAt), 'MMM d, yyyy h:mm a')}</p>
                         </div>
                         <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap mb-2">
-                          {renderCommentBody(comment)}
+                          {comment.content.split(/(@\w+)/g).map((part: string, i: number) => {
+                            if (part.startsWith('@')) {
+                              const mentionedUser = comment.mentions?.find((m: any) => 
+                                m.user.firstName === part.substring(1) || 
+                                m.user.lastName === part.substring(1) ||
+                                m.user.email === part.substring(1)
+                              );
+                              if (mentionedUser) {
+                                return (
+                                  <span key={i} className="text-blue-600 dark:text-blue-400 font-medium">
+                                    @{mentionedUser.user.firstName} {mentionedUser.user.lastName}
+                                  </span>
+                                );
+                              }
+                            }
+                            return <span key={i}>{part}</span>;
+                          })}
                         </p>
                         {/* Reactions */}
                         {comment.reactions && comment.reactions.length > 0 && (
@@ -898,21 +719,17 @@ export default function TaskDetailPage() {
                       />
                       {/* Mention Picker */}
                       {showMentionPicker && filteredUsers.length > 0 && (
-                        <div className="absolute bottom-full left-0 mb-2 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-10 max-h-48 overflow-y-auto text-gray-900 dark:text-white">
-                          {filteredUsers.map((u: any) => (
+                        <div className="absolute bottom-full left-0 mb-2 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-10 max-h-48 overflow-y-auto">
+                          {filteredUsers.map((u) => (
                             <button
                               key={u.id}
-                              type="button"
-                              onClick={() => insertMention(u.id, u.firstName)}
+                              onClick={() => insertMention(u.id, `${u.firstName} ${u.lastName}`)}
                               className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
                             >
                               <div className="w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs">
-                                {u.firstName?.[0]}
-                                {u.lastName?.[0]}
+                                {u.firstName[0]}{u.lastName[0]}
                               </div>
-                              <span className="text-gray-900 dark:text-white">
-                                {u.firstName} {u.lastName}
-                              </span>
+                              <span className="text-gray-900 dark:text-white">{u.firstName} {u.lastName}</span>
                             </button>
                           ))}
                         </div>
@@ -1004,9 +821,10 @@ export default function TaskDetailPage() {
                           <p className="text-sm text-gray-700 dark:text-gray-300">
                             <span className="font-medium">{activity.user.firstName} {activity.user.lastName}</span>
                             {' '}
-                            <span className="text-gray-600 dark:text-gray-400">
-                              {formatActivityLine(activity)}
-                            </span>
+                            <span className="text-gray-600 dark:text-gray-400">{activity.action.replace('_', ' ')}</span>
+                            {activity.newValue && (
+                              <span className="text-gray-500 dark:text-gray-400">: {activity.newValue}</span>
+                            )}
                           </p>
                           <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
                             {format(new Date(activity.createdAt), 'MMM d, yyyy h:mm a')}
@@ -1021,166 +839,188 @@ export default function TaskDetailPage() {
 
             {/* Sidebar - Jira Style */}
             <div className="space-y-4">
-              {/* Time Tracking - hidden for VIEWER */}
-              {user?.role && canUseTimeTracking(user.role) && (
-                <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded">
-                  <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
-                    <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide flex items-center gap-2">
-                      <Clock className="h-4 w-4" />
-                      Time Logged
-                    </h2>
+              {/* Time Logged */}
+              <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded">
+                <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+                  <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide flex items-center gap-2">
+                    <Clock className="h-4 w-4" />
+                    Time Logged
+                  </h2>
+                </div>
+                <div className="p-4 space-y-4">
+                  <div>
+                    <p className="text-3xl font-semibold text-gray-900 dark:text-white">
+                      {totalLoggedHours.toFixed(2)}h
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                      {timeEntries.length} {timeEntries.length === 1 ? 'entry' : 'entries'}
+                    </p>
                   </div>
-                  <div className="p-4 space-y-4">
-                    <div className="text-center">
-                      <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                        {totalLoggedHours.toFixed(2)}h
-                      </p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                        {timeEntries.length} entr{timeEntries.length === 1 ? 'y' : 'ies'}
-                      </p>
-                    </div>
 
-                    {activeTimer ? (
-                      <div>
-                        {activeTimer.taskId !== params.taskId && (
-                          <div className="mb-3 p-2 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded text-xs text-yellow-800 dark:text-yellow-200">
-                            Timer running on a different task
-                            {activeTimer.task?.title ? `: ${activeTimer.task.title}` : ''}
-                          </div>
-                        )}
-                        <div className="text-center mb-3">
-                          <p className="text-3xl font-bold text-blue-600 dark:text-blue-400">
-                            {formatTime(elapsedTime)}
-                          </p>
-                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Running now</p>
-                        </div>
-                        <button
-                          onClick={stopTimer}
-                          className="w-full px-3 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors flex items-center justify-center gap-2 text-sm font-medium"
-                        >
-                          <Square className="h-4 w-4" />
-                          Stop Timer
-                        </button>
+                  {activeTimer && activeTimer.taskId === params.taskId ? (
+                    <div className="space-y-2">
+                      <p className="text-2xl font-bold text-blue-600 dark:text-blue-400 text-center">
+                        {formatTime(elapsedTime)}
+                      </p>
+                      <button
+                        onClick={handleStopTimer}
+                        className="w-full px-3 py-2.5 bg-red-600 text-white rounded hover:bg-red-700 transition-colors flex items-center justify-center gap-2 text-sm font-medium"
+                      >
+                        <Square className="h-4 w-4" />
+                        Stop Timer
+                      </button>
+                    </div>
+                  ) : activeTimer ? (
+                    <div className="space-y-2">
+                      <div className="p-2 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded text-xs text-yellow-800 dark:text-yellow-200">
+                        Timer running on: {activeTimer.task?.title || 'another task'}
                       </div>
-                    ) : task.status === 'DONE' ? (
-                      <p className="text-xs text-center text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-700/40 rounded px-2 py-2">
-                        Task is completed — timer disabled. Add or edit hours manually below.
-                      </p>
-                    ) : (
                       <button
-                        onClick={startTimer}
-                        className="w-full px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 text-sm font-medium"
+                        onClick={handleStopTimer}
+                        className="w-full px-3 py-2.5 bg-red-600 text-white rounded hover:bg-red-700 transition-colors flex items-center justify-center gap-2 text-sm font-medium"
                       >
-                        <Play className="h-4 w-4" />
-                        Start Timer
-                      </button>
-                    )}
-
-                    <div className="border-t border-gray-200 dark:border-gray-700 pt-3 space-y-2">
-                      <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                        Manual entry
-                      </p>
-                      <input
-                        type="number"
-                        step="0.25"
-                        min="0"
-                        value={manualHours}
-                        onChange={(e) => setManualHours(e.target.value)}
-                        placeholder="Hours"
-                        className="w-full px-2.5 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                      />
-                      <input
-                        type="text"
-                        value={manualDescription}
-                        onChange={(e) => setManualDescription(e.target.value)}
-                        placeholder="Note (optional)"
-                        className="w-full px-2.5 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                      />
-                      <button
-                        onClick={addManualTime}
-                        disabled={savingManualTime}
-                        className="w-full px-3 py-2 bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 rounded hover:opacity-90 transition-opacity text-sm font-medium disabled:opacity-50"
-                      >
-                        {savingManualTime ? 'Saving…' : 'Add hours'}
+                        <Square className="h-4 w-4" />
+                        Stop Timer
                       </button>
                     </div>
+                  ) : (
+                    <button
+                      onClick={handleStartTimer}
+                      className="w-full px-3 py-2.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 text-sm font-medium"
+                    >
+                      <Play className="h-4 w-4" />
+                      Start Timer
+                    </button>
+                  )}
 
-                    {timeEntries.length > 0 && (
-                      <div className="border-t border-gray-200 dark:border-gray-700 pt-3 space-y-2 max-h-48 overflow-y-auto">
-                        {timeEntries.map((entry: any) => (
-                          <div
-                            key={entry.id}
-                            className="flex items-center justify-between gap-2 text-sm"
-                          >
-                            {editingTimeId === entry.id ? (
-                              <div className="flex items-center gap-1 w-full">
-                                <input
-                                  type="number"
-                                  step="0.25"
-                                  min="0"
-                                  value={editHours}
-                                  onChange={(e) => setEditHours(e.target.value)}
-                                  className="flex-1 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                                />
+                  <div className="border-t border-gray-200 dark:border-gray-700 pt-4 space-y-2">
+                    <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                      Manual Entry
+                    </p>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.25"
+                      placeholder="Hours"
+                      value={manualHours}
+                      onChange={(e) => setManualHours(e.target.value)}
+                      className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    />
+                    <textarea
+                      placeholder="Note (optional)"
+                      value={manualNote}
+                      onChange={(e) => setManualNote(e.target.value)}
+                      rows={3}
+                      className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white resize-y min-h-[72px]"
+                    />
+                    <button
+                      onClick={addManualHours}
+                      disabled={addingHours}
+                      className="w-full px-3 py-2 text-sm font-medium bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors disabled:opacity-50"
+                    >
+                      {addingHours ? 'Adding...' : 'Add hours'}
+                    </button>
+                  </div>
+
+                  {timeEntries.length > 0 && (
+                    <div className="border-t border-gray-200 dark:border-gray-700 divide-y divide-gray-200 dark:divide-gray-700 -mx-4">
+                      {timeEntries.map((entry) => (
+                        <div key={entry.id} className="px-4 py-3">
+                          {editingEntryId === entry.id ? (
+                            <div className="space-y-2">
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.25"
+                                value={editEntryHours}
+                                onChange={(e) => setEditEntryHours(e.target.value)}
+                                className="w-full px-2.5 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                              />
+                              <textarea
+                                placeholder="Note (optional)"
+                                value={editEntryNote}
+                                onChange={(e) => setEditEntryNote(e.target.value)}
+                                rows={3}
+                                className="w-full px-2.5 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white resize-y min-h-[64px]"
+                              />
+                              <div className="flex gap-2">
                                 <button
-                                  onClick={() => saveTimeEdit(entry.id)}
-                                  className="p-1 text-blue-600 dark:text-blue-400"
-                                  title="Save"
+                                  onClick={saveEditEntry}
+                                  className="flex-1 px-2 py-1.5 text-xs font-medium bg-blue-600 text-white rounded hover:bg-blue-700"
                                 >
-                                  <Save className="h-3.5 w-3.5" />
+                                  Save
                                 </button>
                                 <button
-                                  onClick={() => setEditingTimeId(null)}
-                                  className="p-1 text-gray-400"
-                                  title="Cancel"
+                                  onClick={() => setEditingEntryId(null)}
+                                  className="flex-1 px-2 py-1.5 text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded"
                                 >
-                                  <X className="h-3.5 w-3.5" />
+                                  Cancel
                                 </button>
                               </div>
-                            ) : (
-                              <>
-                                <div className="min-w-0 flex-1">
-                                  <p className="font-medium text-gray-900 dark:text-white">
-                                    {entry.hours.toFixed(2)}h
-                                  </p>
-                                  <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                                    {entry.user?.firstName} {entry.user?.lastName}
-                                    {' · '}
-                                    {format(new Date(entry.date), 'MMM d')}
-                                  </p>
-                                </div>
-                                <div className="flex gap-0.5">
-                                  <button
-                                    onClick={() => {
-                                      setEditingTimeId(entry.id);
-                                      setEditHours(String(entry.hours));
-                                    }}
-                                    className="p-1 text-gray-400 hover:text-blue-600"
-                                    title="Edit"
-                                  >
-                                    <Edit2 className="h-3.5 w-3.5" />
-                                  </button>
-                                  <button
-                                    onClick={() => deleteTimeEntry(entry.id)}
-                                    className="p-1 text-gray-400 hover:text-red-600"
-                                    title={
-                                      user?.role && canHardDeleteTime(user.role)
-                                        ? 'Delete'
-                                        : 'Request deletion'
-                                    }
-                                  >
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                  </button>
-                                </div>
-                              </>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                            </div>
+                          ) : (
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0 flex-1">
+                                <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                                  {(entry.hours || 0).toFixed(2)}h
+                                </p>
+                                {entry.description && (
+                                  <div className="mt-0.5">
+                                    <p
+                                      className={`text-sm text-gray-700 dark:text-gray-300 break-words whitespace-pre-wrap ${
+                                        expandedNotes[entry.id] ? '' : 'line-clamp-2'
+                                      }`}
+                                    >
+                                      {entry.description}
+                                    </p>
+                                    {entry.description.length > 100 ||
+                                    (entry.description.match(/\n/g) || []).length >= 2 ? (
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          setExpandedNotes((prev) => ({
+                                            ...prev,
+                                            [entry.id]: !prev[entry.id],
+                                          }))
+                                        }
+                                        className="mt-1 text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline"
+                                      >
+                                        {expandedNotes[entry.id] ? 'Show less' : 'Show more'}
+                                      </button>
+                                    ) : null}
+                                  </div>
+                                )}
+                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                                  {entry.user
+                                    ? `${entry.user.firstName} ${entry.user.lastName}`
+                                    : 'Unknown'}{' '}
+                                  · {format(new Date(entry.date), 'MMM d')}
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                  onClick={() => startEditEntry(entry)}
+                                  className="p-1.5 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 rounded hover:bg-gray-100 dark:hover:bg-gray-700"
+                                  title="Edit entry"
+                                >
+                                  <Edit2 className="h-3.5 w-3.5" />
+                                </button>
+                                <button
+                                  onClick={() => deleteTimeEntry(entry.id)}
+                                  className="p-1.5 text-gray-400 hover:text-red-600 dark:hover:text-red-400 rounded hover:bg-gray-100 dark:hover:bg-gray-700"
+                                  title="Delete entry"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              )}
+              </div>
 
               {/* Details */}
               <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded">
@@ -1285,7 +1125,6 @@ export default function TaskDetailPage() {
                     />
                   </div>
 
-                  {user?.role && canUseTimeTracking(user.role) && (
                   <div>
                     <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">Time Estimate (hours)</label>
                     <input
@@ -1296,7 +1135,6 @@ export default function TaskDetailPage() {
                       placeholder="0"
                     />
                   </div>
-                  )}
                 </div>
               </div>
 
@@ -1433,24 +1271,12 @@ export default function TaskDetailPage() {
                     {task.labels?.map((label: any) => (
                       <span
                         key={label.id}
-                        className="group/label inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium text-white"
+                        className="px-2 py-0.5 rounded text-xs font-medium text-white"
                         style={{ backgroundColor: label.color }}
                       >
                         {label.name}
-                        <button
-                          type="button"
-                          onClick={() => removeLabel(label.id)}
-                          className="ml-0.5 rounded-full p-0.5 hover:bg-black/20 transition-colors"
-                          title={`Remove ${label.name}`}
-                          aria-label={`Remove label ${label.name}`}
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
                       </span>
                     ))}
-                    {(!task.labels || task.labels.length === 0) && (
-                      <p className="text-xs text-gray-400 dark:text-gray-500">No labels yet</p>
-                    )}
                   </div>
                   <div className="flex gap-2">
                     <input
@@ -1506,7 +1332,7 @@ export default function TaskDetailPage() {
                             type="checkbox"
                             checked={subtask.isCompleted}
                             onChange={() => toggleSubtask(subtask.id, subtask.isCompleted)}
-                            className="mt-0.5 w-4 h-4 text-blue-600 border-gray-300 dark:border-gray-600 rounded focus:ring-blue-500"
+                            className="mt-0.5 w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                           />
                           <span className={`text-sm flex-1 ${subtask.isCompleted ? 'line-through text-gray-400 dark:text-gray-500' : 'text-gray-700 dark:text-gray-300'}`}>
                             {subtask.title}

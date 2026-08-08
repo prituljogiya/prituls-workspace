@@ -19,162 +19,175 @@ router.get('/', authenticate, async (req: AuthRequest, res) => {
     const upcomingDueDate = new Date();
     upcomingDueDate.setDate(upcomingDueDate.getDate() + 7);
 
-    // Run independent queries in parallel (was sequential → slower)
-    const [projects, allTasks, assignedTasks, tasksDueSoon] = await Promise.all([
-      prisma.project.findMany({
-        where: isSuperAdmin
-          ? { isArchived: false }
-          : { ...memberFilter, isArchived: false },
-        include: {
-          workspace: {
-            select: {
-              id: true,
-              name: true,
-              slug: true,
-            },
-          },
-          _count: {
-            select: {
-              tasks: true,
-              boards: true,
-            },
-          },
-        },
-        orderBy: { updatedAt: 'desc' },
-      }),
-      prisma.task.findMany({
-        where: {
-          project: isSuperAdmin ? { isArchived: false } : memberFilter,
-        },
-        select: {
-          id: true,
-          status: true,
-          issueType: true,
-          projectId: true,
-          storyPoints: true,
-        },
-      }),
-      prisma.task.findMany({
-        where: isSuperAdmin
-          ? { isInBacklog: false }
-          : {
-              assignments: {
-                some: {
-                  userId: req.userId!,
-                },
+    // Parallel queries — use aggregates for stats instead of loading every task
+    const taskScope = isSuperAdmin
+      ? { project: { isArchived: false } }
+      : { project: { ...memberFilter, isArchived: false } };
+
+    const [projects, statusGroups, typeGroups, projectStatusGroups, assignedTasks, tasksDueSoon] =
+      await Promise.all([
+        prisma.project.findMany({
+          where: isSuperAdmin
+            ? { isArchived: false }
+            : { ...memberFilter, isArchived: false },
+          include: {
+            workspace: {
+              select: {
+                id: true,
+                name: true,
+                slug: true,
               },
-              project: memberFilter,
-              isInBacklog: false,
             },
-        include: {
-          project: {
-            select: {
-              id: true,
-              name: true,
-              color: true,
-            },
-          },
-          column: {
-            select: {
-              id: true,
-              name: true,
-            },
-          },
-          assignments: {
-            include: {
-              user: {
-                select: {
-                  id: true,
-                  email: true,
-                  firstName: true,
-                  lastName: true,
-                  avatar: true,
-                },
+            _count: {
+              select: {
+                tasks: true,
+                boards: true,
               },
             },
           },
-          labels: true,
-          _count: {
-            select: {
-              comments: true,
-              checklist: true,
-            },
-          },
-        },
-        orderBy: { updatedAt: 'desc' },
-        take: 10,
-      }),
-      prisma.task.findMany({
-        where: {
-          ...(isSuperAdmin
-            ? {}
+          orderBy: { updatedAt: 'desc' },
+        }),
+        prisma.task.groupBy({
+          by: ['status'],
+          where: taskScope,
+          _count: { _all: true },
+        }),
+        prisma.task.groupBy({
+          by: ['issueType'],
+          where: taskScope,
+          _count: { _all: true },
+        }),
+        prisma.task.groupBy({
+          by: ['projectId', 'status'],
+          where: taskScope,
+          _count: { _all: true },
+        }),
+        prisma.task.findMany({
+          where: isSuperAdmin
+            ? { isInBacklog: false }
             : {
                 assignments: {
                   some: {
                     userId: req.userId!,
                   },
                 },
-              }),
-          dueDate: {
-            lte: upcomingDueDate,
-            gte: new Date(),
-          },
-          status: {
-            not: 'DONE',
-          },
-        },
-        include: {
-          project: {
-            select: {
-              id: true,
-              name: true,
-              color: true,
+                project: memberFilter,
+                isInBacklog: false,
+              },
+          include: {
+            project: {
+              select: {
+                id: true,
+                name: true,
+                color: true,
+              },
+            },
+            column: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+            assignments: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    email: true,
+                    firstName: true,
+                    lastName: true,
+                    avatar: true,
+                  },
+                },
+              },
+            },
+            labels: true,
+            _count: {
+              select: {
+                comments: true,
+                checklist: true,
+              },
             },
           },
-          column: {
-            select: {
-              id: true,
-              name: true,
+          orderBy: { updatedAt: 'desc' },
+          take: 10,
+        }),
+        prisma.task.findMany({
+          where: {
+            ...(isSuperAdmin
+              ? {}
+              : {
+                  assignments: {
+                    some: {
+                      userId: req.userId!,
+                    },
+                  },
+                }),
+            dueDate: {
+              lte: upcomingDueDate,
+              gte: new Date(),
+            },
+            status: {
+              not: 'DONE',
             },
           },
-        },
-        orderBy: { dueDate: 'asc' },
-        take: 10,
-      }),
-    ]);
+          include: {
+            project: {
+              select: {
+                id: true,
+                name: true,
+                color: true,
+              },
+            },
+            column: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+          orderBy: { dueDate: 'asc' },
+          take: 10,
+        }),
+      ]);
 
-    // Calculate stats
-    const totalTasks = allTasks.length;
-    const completedTasks = allTasks.filter((t) => t.status === 'DONE').length;
+    const countByStatus = Object.fromEntries(
+      statusGroups.map((g) => [g.status, g._count._all])
+    ) as Record<string, number>;
+    const countByType = Object.fromEntries(
+      typeGroups.map((g) => [g.issueType, g._count._all])
+    ) as Record<string, number>;
+
+    const totalTasks = statusGroups.reduce((sum, g) => sum + g._count._all, 0);
+    const completedTasks = countByStatus.DONE || 0;
+    const inProgressTasks = countByStatus.IN_PROGRESS || 0;
+    const blockedTasks = countByStatus.BLOCKED || 0;
     const pendingTasks = totalTasks - completedTasks;
-    const inProgressTasks = allTasks.filter((t) => t.status === 'IN_PROGRESS').length;
-    const blockedTasks = allTasks.filter((t) => t.status === 'BLOCKED').length;
 
-    // Tasks by status
     const tasksByStatus = {
-      TODO: allTasks.filter((t) => t.status === 'TODO').length,
+      TODO: countByStatus.TODO || 0,
       IN_PROGRESS: inProgressTasks,
-      IN_REVIEW: allTasks.filter((t) => t.status === 'IN_REVIEW').length,
+      IN_REVIEW: countByStatus.IN_REVIEW || 0,
       DONE: completedTasks,
       BLOCKED: blockedTasks,
     };
 
-    // Tasks by issue type
     const tasksByType = {
-      TASK: allTasks.filter((t) => t.issueType === 'TASK').length,
-      BUG: allTasks.filter((t) => t.issueType === 'BUG').length,
-      STORY: allTasks.filter((t) => t.issueType === 'STORY').length,
-      EPIC: allTasks.filter((t) => t.issueType === 'EPIC').length,
+      TASK: countByType.TASK || 0,
+      BUG: countByType.BUG || 0,
+      STORY: countByType.STORY || 0,
+      EPIC: countByType.EPIC || 0,
     };
 
     const projectReports = projects.map((project) => {
-      const projectTasks = allTasks.filter((t) => t.projectId === project.id);
+      const rows = projectStatusGroups.filter((g) => g.projectId === project.id);
+      const total = rows.reduce((sum, g) => sum + g._count._all, 0);
       return {
         projectId: project.id,
         name: project.name,
-        totalTasks: projectTasks.length,
-        completedTasks: projectTasks.filter((t) => t.status === 'DONE').length,
-        inProgressTasks: projectTasks.filter((t) => t.status === 'IN_PROGRESS').length,
+        totalTasks: total,
+        completedTasks: rows.find((g) => g.status === 'DONE')?._count._all || 0,
+        inProgressTasks: rows.find((g) => g.status === 'IN_PROGRESS')?._count._all || 0,
       };
     });
 

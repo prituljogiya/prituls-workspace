@@ -10,8 +10,55 @@ router.use(authenticate);
 
 const MANAGER_ROLES = ['SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER'] as const;
 
+/** Must match frontend TIMER_IDLE_TIMEOUT_MS (5 minutes). */
+const TIMER_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
+
 function isManagerRole(role?: string) {
   return !!role && (MANAGER_ROLES as readonly string[]).includes(role);
+}
+
+function timerIdleDeadline(entry: { lastActivityAt?: Date | null; startTime?: Date | null }) {
+  const anchor = entry.lastActivityAt || entry.startTime;
+  if (!anchor) return null;
+  return new Date(anchor.getTime() + TIMER_IDLE_TIMEOUT_MS);
+}
+
+function isTimerIdle(entry: { lastActivityAt?: Date | null; startTime?: Date | null }) {
+  const deadline = timerIdleDeadline(entry);
+  return !!deadline && Date.now() >= deadline.getTime();
+}
+
+async function autoStopIdleTimer(entry: {
+  id: string;
+  startTime: Date | null;
+  description?: string | null;
+}) {
+  if (!entry.startTime) return null;
+  const endTime = new Date();
+  const hours = Math.max(0, (endTime.getTime() - entry.startTime.getTime()) / (1000 * 60 * 60));
+  const note = entry.description?.trim()
+    ? `${entry.description.trim()}\n(Auto-stopped due to inactivity)`
+    : 'Auto-stopped due to inactivity';
+
+  return prisma.timeEntry.update({
+    where: { id: entry.id },
+    data: {
+      endTime,
+      hours,
+      description: note,
+    },
+    include: {
+      task: {
+        select: {
+          id: true,
+          title: true,
+          project: {
+            select: { id: true, name: true },
+          },
+        },
+      },
+    },
+  });
 }
 
 // Get time entries for a task
@@ -255,13 +302,15 @@ router.post(
         });
       }
 
+      const now = new Date();
       const entry = await prisma.timeEntry.create({
         data: {
           taskId,
           userId: req.userId!,
           projectId: task.projectId,
           hours: 0,
-          startTime: new Date(),
+          startTime: now,
+          lastActivityAt: now,
           isBillable: true,
         },
         include: {
@@ -294,7 +343,7 @@ router.post(
         return res.status(400).json({ errors: errors.array() });
       }
 
-      const { entryId, description } = req.body;
+      const { entryId, description, autoStopped } = req.body;
 
       const entry = await prisma.timeEntry.findUnique({
         where: { id: entryId },
@@ -314,13 +363,19 @@ router.post(
 
       const endTime = new Date();
       const hours = (endTime.getTime() - entry.startTime.getTime()) / (1000 * 60 * 60);
+      const desc = String(description || '').trim();
+      const finalDescription = autoStopped
+        ? desc
+          ? `${desc}\n(Auto-stopped due to inactivity)`
+          : 'Auto-stopped due to inactivity'
+        : desc || entry.description || null;
 
       const updated = await prisma.timeEntry.update({
         where: { id: entryId },
         data: {
           endTime,
           hours,
-          description,
+          description: finalDescription,
         },
         include: {
           user: {
@@ -341,7 +396,7 @@ router.post(
         },
       });
 
-      res.json({ entry: updated });
+      res.json({ entry: updated, autoStopped: Boolean(autoStopped) });
     } catch (error) {
       console.error('Stop timer error:', error);
       res.status(500).json({ error: 'Failed to stop timer' });
@@ -374,10 +429,69 @@ router.get('/timer/active', allowHoursAccess, async (req: AuthRequest, res) => {
       },
     });
 
+    if (entry && isTimerIdle(entry)) {
+      const stopped = await autoStopIdleTimer(entry);
+      return res.json({ entry: null, autoStopped: true, stoppedEntry: stopped });
+    }
+
     res.json({ entry });
   } catch (error) {
     console.error('Get active timer error:', error);
     res.status(500).json({ error: 'Failed to get active timer' });
+  }
+});
+
+// Heartbeat — keep timer alive while user is active; auto-stop if idle timeout passed
+router.post('/timer/heartbeat', allowHoursAccess, async (req: AuthRequest, res) => {
+  try {
+    const entry = await prisma.timeEntry.findFirst({
+      where: {
+        userId: req.userId!,
+        startTime: { not: null },
+        endTime: null,
+      },
+      include: {
+        task: {
+          select: {
+            id: true,
+            title: true,
+            project: {
+              select: { id: true, name: true },
+            },
+          },
+        },
+      },
+    });
+
+    if (!entry) {
+      return res.json({ entry: null });
+    }
+
+    if (isTimerIdle(entry)) {
+      const stopped = await autoStopIdleTimer(entry);
+      return res.json({ entry: null, autoStopped: true, stoppedEntry: stopped });
+    }
+
+    const updated = await prisma.timeEntry.update({
+      where: { id: entry.id },
+      data: { lastActivityAt: new Date() },
+      include: {
+        task: {
+          select: {
+            id: true,
+            title: true,
+            project: {
+              select: { id: true, name: true },
+            },
+          },
+        },
+      },
+    });
+
+    res.json({ entry: updated });
+  } catch (error) {
+    console.error('Timer heartbeat error:', error);
+    res.status(500).json({ error: 'Failed to update timer activity' });
   }
 });
 

@@ -1,6 +1,6 @@
-import jwt, { SignOptions } from 'jsonwebtoken';
+import jwt from 'jsonwebtoken';
 
-export type TokenPayload = {
+export type JwtUserPayload = {
   userId: string;
   email?: string;
   role?: string;
@@ -8,18 +8,18 @@ export type TokenPayload = {
 
 export const generateToken = (
   userId: string,
-  claims?: { email: string; role: string }
+  extras?: { email?: string; role?: string }
 ): string => {
-  const options: SignOptions = {
-    expiresIn: (process.env.JWT_EXPIRES_IN || '7d') as SignOptions['expiresIn'],
-  };
-  const payload: TokenPayload = {
+  const payload: JwtUserPayload = {
     userId,
-    ...(claims ? { email: claims.email, role: claims.role } : {}),
+    ...(extras?.email ? { email: extras.email } : {}),
+    ...(extras?.role ? { role: extras.role } : {}),
   };
-  return jwt.sign(payload, process.env.JWT_SECRET as string, options);
+  return jwt.sign(payload, process.env.JWT_SECRET!, {
+    expiresIn: process.env.JWT_EXPIRES_IN || '7d',
+  } as jwt.SignOptions);
 };
 
-export const verifyToken = (token: string): TokenPayload => {
-  return jwt.verify(token, process.env.JWT_SECRET as string) as TokenPayload;
+export const verifyToken = (token: string): JwtUserPayload => {
+  return jwt.verify(token, process.env.JWT_SECRET!) as JwtUserPayload;
 };

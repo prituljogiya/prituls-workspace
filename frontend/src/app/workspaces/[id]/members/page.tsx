@@ -2,11 +2,10 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import api from '@/lib/api';
 import { Layout } from '@/components/Layout';
-import { ArrowLeft, Plus, X, UserPlus } from 'lucide-react';
+import { X, UserPlus } from 'lucide-react';
 import { RoleGuard } from '@/components/RoleGuard';
 
 export default function WorkspaceMembersPage() {
@@ -77,14 +76,14 @@ export default function WorkspaceMembersPage() {
   };
 
   const availableUsers = allUsers.filter(
-    user => !workspace?.members?.some((m: any) => m.userId === user.id)
+    (u) => !workspace?.members?.some((m: any) => m.userId === u.id)
   );
 
   if (loading || authLoading) {
     return (
       <Layout>
-        <div className="flex items-center justify-center min-h-screen">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+        <div className="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-900">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600" />
         </div>
       </Layout>
     );
@@ -92,8 +91,8 @@ export default function WorkspaceMembersPage() {
 
   return (
     <Layout>
-      <div className="min-h-screen">
-        <header className="bg-white dark:bg-gray-800 shadow-sm border-b dark:border-gray-700 sticky top-0 z-10">
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+        <header className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700 sticky top-0 z-10">
           <div className="px-6 py-4">
             <div className="flex items-center justify-between">
               <div>
@@ -102,6 +101,7 @@ export default function WorkspaceMembersPage() {
               </div>
               <RoleGuard allowedRoles={['SUPER_ADMIN', 'WORKSPACE_OWNER']}>
                 <button
+                  type="button"
                   onClick={() => setShowAddModal(true)}
                   className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
                 >
@@ -114,118 +114,135 @@ export default function WorkspaceMembersPage() {
         </header>
 
         <main className="p-6 max-w-4xl mx-auto">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow">
-          <div className="divide-y">
-            {workspace?.members?.map((member: any) => (
-              <div key={member.id} className="p-4 flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-full bg-primary-500 text-white flex items-center justify-center">
-                    {member.user.firstName[0]}{member.user.lastName[0]}
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700">
+            <div className="divide-y divide-gray-200 dark:divide-gray-700">
+              {!workspace?.members?.length ? (
+                <div className="p-8 text-center text-gray-500 dark:text-gray-400">No members yet.</div>
+              ) : (
+                workspace.members.map((member: any) => (
+                  <div
+                    key={member.id}
+                    className="p-4 flex items-center justify-between gap-4 hover:bg-gray-50 dark:hover:bg-gray-700/40 transition-colors"
+                  >
+                    <div className="flex items-center gap-4 min-w-0">
+                      <div className="w-12 h-12 rounded-full bg-primary-500 text-white flex items-center justify-center shrink-0">
+                        {member.user.firstName?.[0]}
+                        {member.user.lastName?.[0]}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-medium text-gray-900 dark:text-white truncate">
+                          {member.user.firstName} {member.user.lastName}
+                        </p>
+                        <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
+                          {member.user.email}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <RoleGuard allowedRoles={['SUPER_ADMIN', 'WORKSPACE_OWNER']}>
+                        <select
+                          value={member.role}
+                          onChange={async (e) => {
+                            try {
+                              await api.patch(`/workspaces/${params.id}/members/${member.id}`, {
+                                role: e.target.value,
+                              });
+                              fetchWorkspace();
+                            } catch (error: any) {
+                              alert(error.response?.data?.error || 'Failed to update role');
+                            }
+                          }}
+                          className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                        >
+                          <option value="WORKSPACE_OWNER">Workspace Owner</option>
+                          <option value="PROJECT_MANAGER">Project Manager</option>
+                          <option value="TEAM_MEMBER">Team Member</option>
+                          <option value="VIEWER">Viewer</option>
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => removeMember(member.id)}
+                          className="p-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 rounded"
+                        >
+                          <X className="h-5 w-5" />
+                        </button>
+                      </RoleGuard>
+                      {!['SUPER_ADMIN', 'WORKSPACE_OWNER'].includes(user?.role || '') && (
+                        <span className="px-2 py-1 text-xs rounded bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200">
+                          {member.role}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <div>
-                    <p className="font-medium text-gray-900 dark:text-white">
-                      {member.user.firstName} {member.user.lastName}
-                    </p>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">{member.user.email}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-4">
-                  <RoleGuard allowedRoles={['SUPER_ADMIN', 'WORKSPACE_OWNER']}>
-                    <select
-                      value={member.role}
-                      onChange={async (e) => {
-                        try {
-                          await api.patch(`/workspaces/${params.id}/members/${member.id}`, {
-                            role: e.target.value,
-                          });
-                          fetchWorkspace();
-                        } catch (error: any) {
-                          alert(error.response?.data?.error || 'Failed to update role');
-                        }
-                      }}
-                      className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-lg text-sm"
-                    >
-                      <option value="WORKSPACE_OWNER">Workspace Owner</option>
-                      <option value="PROJECT_MANAGER">Project Manager</option>
-                      <option value="TEAM_MEMBER">Team Member</option>
-                      <option value="VIEWER">Viewer</option>
-                    </select>
-                    <button
-                      onClick={() => removeMember(member.id)}
-                      className="p-2 text-red-600 hover:bg-red-50 rounded"
-                    >
-                      <X className="h-5 w-5" />
-                    </button>
-                  </RoleGuard>
-                  {!['SUPER_ADMIN', 'WORKSPACE_OWNER'].includes(user?.role || '') && (
-                    <span className="px-2 py-1 text-xs rounded bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300">
-                      {member.role}
-                    </span>
-                  )}
-                </div>
-              </div>
-            ))}
+                ))
+              )}
+            </div>
           </div>
-        </div>
         </main>
 
-        {/* Add Member Modal */}
         {showAddModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-md">
-            <h2 className="text-xl font-bold mb-4 text-gray-900 dark:text-white">Add Workspace Member</h2>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">User</label>
-                <select
-                  value={selectedUserId}
-                  onChange={(e) => setSelectedUserId(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                >
-                  <option value="">Select a user</option>
-                  {availableUsers.map((user) => (
-                    <option key={user.id} value={user.id}>
-                      {user.firstName} {user.lastName} ({user.email})
-                    </option>
-                  ))}
-                </select>
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-md border border-gray-200 dark:border-gray-700">
+              <h2 className="text-xl font-bold mb-4 text-gray-900 dark:text-white">
+                Add Workspace Member
+              </h2>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    User
+                  </label>
+                  <select
+                    value={selectedUserId}
+                    onChange={(e) => setSelectedUserId(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  >
+                    <option value="">Select a user</option>
+                    {availableUsers.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.firstName} {u.lastName} ({u.email})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Role
+                  </label>
+                  <select
+                    value={selectedRole}
+                    onChange={(e) => setSelectedRole(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  >
+                    <option value="PROJECT_MANAGER">Project Manager</option>
+                    <option value="TEAM_MEMBER">Team Member</option>
+                    <option value="VIEWER">Viewer</option>
+                  </select>
+                </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Role</label>
-                <select
-                  value={selectedRole}
-                  onChange={(e) => setSelectedRole(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              <div className="flex gap-4 mt-6">
+                <button
+                  type="button"
+                  onClick={addMember}
+                  disabled={!selectedUserId}
+                  className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
                 >
-                  <option value="PROJECT_MANAGER">Project Manager</option>
-                  <option value="TEAM_MEMBER">Team Member</option>
-                  <option value="VIEWER">Viewer</option>
-                </select>
+                  Add
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAddModal(false);
+                    setSelectedUserId('');
+                  }}
+                  className="flex-1 px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600"
+                >
+                  Cancel
+                </button>
               </div>
-            </div>
-            <div className="flex gap-4 mt-6">
-              <button
-                onClick={addMember}
-                disabled={!selectedUserId}
-                className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
-              >
-                Add
-              </button>
-              <button
-                onClick={() => {
-                  setShowAddModal(false);
-                  setSelectedUserId('');
-                }}
-                className="flex-1 px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600"
-              >
-                Cancel
-              </button>
             </div>
           </div>
-        </div>
         )}
       </div>
     </Layout>
   );
 }
-

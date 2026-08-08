@@ -5,49 +5,6 @@ import { prisma } from '../utils/prisma';
 
 const router = express.Router();
 
-async function placeTasksOnProjectBoard(projectId: string, taskIds: string[]) {
-  if (taskIds.length === 0) return { placed: 0, boardId: null as string | null };
-
-  const board = await prisma.board.findFirst({
-    where: { projectId, isActive: true },
-    include: {
-      columns: { orderBy: { order: 'asc' } },
-    },
-    orderBy: { order: 'asc' },
-  });
-
-  if (!board || board.columns.length === 0) {
-    return { placed: 0, boardId: null as string | null };
-  }
-
-  const todoColumn =
-    board.columns.find((c) => /^(to\s*do|todo)$/i.test(c.name.trim())) || board.columns[0];
-
-  const result = await prisma.task.updateMany({
-    where: {
-      id: { in: taskIds },
-      OR: [{ boardId: null }, { columnId: null }],
-    },
-    data: {
-      boardId: board.id,
-      columnId: todoColumn.id,
-      isInBacklog: false,
-    },
-  });
-
-  return { placed: result.count, boardId: board.id };
-}
-
-function sprintStats(tasks: { status: string; storyPoints: number | null }[]) {
-  const totalTasks = tasks.length;
-  const doneTasks = tasks.filter((t) => t.status === 'DONE').length;
-  const storyPoints = tasks.reduce((sum, t) => sum + (t.storyPoints || 0), 0);
-  const donePoints = tasks
-    .filter((t) => t.status === 'DONE')
-    .reduce((sum, t) => sum + (t.storyPoints || 0), 0);
-  return { totalTasks, doneTasks, incompleteTasks: totalTasks - doneTasks, storyPoints, donePoints };
-}
-
 // Get sprints for project
 router.get('/project/:projectId', authenticate, async (req: AuthRequest, res) => {
   try {
@@ -64,33 +21,16 @@ router.get('/project/:projectId', authenticate, async (req: AuthRequest, res) =>
             lastName: true,
           },
         },
-        tasks: {
-          select: {
-            id: true,
-            status: true,
-            storyPoints: true,
-          },
-        },
         _count: {
           select: {
             tasks: true,
           },
         },
       },
-      orderBy: [{ status: 'asc' }, { startDate: 'desc' }, { createdAt: 'desc' }],
+      orderBy: { createdAt: 'desc' },
     });
 
-    const ordered = [...sprints].sort((a, b) => {
-      const rank: Record<string, number> = { ACTIVE: 0, PLANNED: 1, COMPLETED: 2, CANCELLED: 3 };
-      return (rank[a.status] ?? 9) - (rank[b.status] ?? 9);
-    });
-
-    res.json({
-      sprints: ordered.map(({ tasks, ...sprint }) => ({
-        ...sprint,
-        stats: sprintStats(tasks),
-      })),
-    });
+    res.json({ sprints });
   } catch (error) {
     console.error('Get sprints error:', error);
     res.status(500).json({ error: 'Failed to get sprints' });
@@ -138,12 +78,6 @@ router.get('/:id', authenticate, async (req: AuthRequest, res) => {
                 name: true,
               },
             },
-            board: {
-              select: {
-                id: true,
-                name: true,
-              },
-            },
             labels: true,
             _count: {
               select: {
@@ -161,23 +95,7 @@ router.get('/:id', authenticate, async (req: AuthRequest, res) => {
       return res.status(404).json({ error: 'Sprint not found' });
     }
 
-    const nextSprints = await prisma.sprint.findMany({
-      where: {
-        projectId: sprint.projectId,
-        status: 'PLANNED',
-        id: { not: sprint.id },
-      },
-      select: { id: true, name: true, startDate: true, endDate: true },
-      orderBy: { startDate: 'asc' },
-    });
-
-    res.json({
-      sprint: {
-        ...sprint,
-        stats: sprintStats(sprint.tasks),
-      },
-      nextSprints,
-    });
+    res.json({ sprint });
   } catch (error) {
     console.error('Get sprint error:', error);
     res.status(500).json({ error: 'Failed to get sprint' });
@@ -188,7 +106,7 @@ router.get('/:id', authenticate, async (req: AuthRequest, res) => {
 router.post(
   '/',
   authenticate,
-  authorize('SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER', 'TEAM_MEMBER'),
+  authorize('SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER'),
   [body('name').trim().notEmpty(), body('projectId').notEmpty()],
   async (req: AuthRequest, res) => {
     try {
@@ -199,15 +117,6 @@ router.post(
 
       const { name, projectId, startDate, endDate, goal } = req.body;
 
-      const project = await prisma.project.findUnique({ where: { id: projectId } });
-      if (!project) {
-        return res.status(404).json({ error: 'Project not found' });
-      }
-
-      if (startDate && endDate && new Date(endDate) < new Date(startDate)) {
-        return res.status(400).json({ error: 'End date must be on or after start date' });
-      }
-
       const sprint = await prisma.sprint.create({
         data: {
           name,
@@ -215,7 +124,7 @@ router.post(
           createdById: req.userId!,
           startDate: startDate ? new Date(startDate) : null,
           endDate: endDate ? new Date(endDate) : null,
-          goal: goal || null,
+          goal,
           status: 'PLANNED',
         },
         include: {
@@ -244,37 +153,23 @@ router.post(
   }
 );
 
-// Update sprint (planning fields only — status via start/complete/cancel)
+// Update sprint
 router.patch(
   '/:id',
   authenticate,
   authorize('SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER'),
   async (req: AuthRequest, res) => {
     try {
-      const existing = await prisma.sprint.findUnique({ where: { id: req.params.id } });
-      if (!existing) {
-        return res.status(404).json({ error: 'Sprint not found' });
-      }
-
-      if (existing.status === 'COMPLETED' || existing.status === 'CANCELLED') {
-        return res.status(400).json({ error: 'Cannot edit a completed or cancelled sprint' });
-      }
-
-      const { name, startDate, endDate, goal } = req.body;
-      const nextStart = startDate !== undefined ? (startDate ? new Date(startDate) : null) : existing.startDate;
-      const nextEnd = endDate !== undefined ? (endDate ? new Date(endDate) : null) : existing.endDate;
-
-      if (nextStart && nextEnd && nextEnd < nextStart) {
-        return res.status(400).json({ error: 'End date must be on or after start date' });
-      }
+      const { name, startDate, endDate, goal, status } = req.body;
 
       const sprint = await prisma.sprint.update({
         where: { id: req.params.id },
         data: {
-          name: name !== undefined ? name : undefined,
-          startDate: startDate !== undefined ? (startDate ? new Date(startDate) : null) : undefined,
-          endDate: endDate !== undefined ? (endDate ? new Date(endDate) : null) : undefined,
-          goal: goal !== undefined ? goal : undefined,
+          name,
+          startDate: startDate ? new Date(startDate) : undefined,
+          endDate: endDate ? new Date(endDate) : undefined,
+          goal,
+          status,
         },
         include: {
           project: {
@@ -294,71 +189,25 @@ router.patch(
   }
 );
 
-// Start sprint: PLANNED → ACTIVE, one active per project, place tasks on board
+// Start sprint
 router.patch(
   '/:id/start',
   authenticate,
   authorize('SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER'),
   async (req: AuthRequest, res) => {
     try {
-      const existing = await prisma.sprint.findUnique({
-        where: { id: req.params.id },
-        include: { tasks: { select: { id: true } } },
-      });
-
-      if (!existing) {
-        return res.status(404).json({ error: 'Sprint not found' });
-      }
-
-      if (existing.status !== 'PLANNED') {
-        return res.status(400).json({ error: 'Only planned sprints can be started' });
-      }
-
-      if (!existing.startDate || !existing.endDate) {
-        return res.status(400).json({ error: 'Set start and end dates before starting the sprint' });
-      }
-
-      const activeOther = await prisma.sprint.findFirst({
-        where: {
-          projectId: existing.projectId,
-          status: 'ACTIVE',
-          id: { not: existing.id },
-        },
-      });
-
-      if (activeOther) {
-        return res.status(400).json({
-          error: `Another sprint is already active ("${activeOther.name}"). Complete it before starting a new one.`,
-          activeSprintId: activeOther.id,
-        });
-      }
-
-      const placeOnBoard = req.body?.placeOnBoard !== false;
-
       const sprint = await prisma.sprint.update({
         where: { id: req.params.id },
         data: {
           status: 'ACTIVE',
-          // Preserve planned dates; fill startDate only if somehow missing
-          startDate: existing.startDate || new Date(),
+          startDate: new Date(),
         },
         include: {
           tasks: true,
         },
       });
 
-      let boardResult = { placed: 0, boardId: null as string | null };
-      if (placeOnBoard) {
-        boardResult = await placeTasksOnProjectBoard(
-          existing.projectId,
-          existing.tasks.map((t) => t.id)
-        );
-      }
-
-      res.json({
-        sprint,
-        board: boardResult,
-      });
+      res.json({ sprint });
     } catch (error) {
       console.error('Start sprint error:', error);
       res.status(500).json({ error: 'Failed to start sprint' });
@@ -366,152 +215,22 @@ router.patch(
   }
 );
 
-// Complete sprint: ACTIVE → COMPLETED + incomplete work handling
-router.patch(
-  '/:id/complete',
-  authenticate,
-  authorize('SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER'),
-  async (req: AuthRequest, res) => {
-    try {
-      const existing = await prisma.sprint.findUnique({
-        where: { id: req.params.id },
-        include: {
-          tasks: {
-            select: { id: true, status: true, title: true },
-          },
-        },
-      });
-
-      if (!existing) {
-        return res.status(404).json({ error: 'Sprint not found' });
-      }
-
-      if (existing.status !== 'ACTIVE') {
-        return res.status(400).json({ error: 'Only active sprints can be completed' });
-      }
-
-      const incompleteAction = (req.body?.incompleteAction as string) || 'backlog';
-      const nextSprintId = req.body?.nextSprintId as string | undefined;
-      const incomplete = existing.tasks.filter((t) => t.status !== 'DONE');
-      const incompleteIds = incomplete.map((t) => t.id);
-
-      if (incompleteIds.length > 0) {
-        if (incompleteAction === 'next_sprint') {
-          if (!nextSprintId) {
-            return res.status(400).json({ error: 'Select a planned sprint for incomplete tasks' });
-          }
-          const nextSprint = await prisma.sprint.findUnique({ where: { id: nextSprintId } });
-          if (!nextSprint || nextSprint.projectId !== existing.projectId) {
-            return res.status(400).json({ error: 'Invalid next sprint' });
-          }
-          if (nextSprint.status !== 'PLANNED') {
-            return res.status(400).json({ error: 'Incomplete tasks can only move to a planned sprint' });
-          }
-
-          await prisma.task.updateMany({
-            where: { id: { in: incompleteIds } },
-            data: {
-              sprintId: nextSprintId,
-              isInBacklog: false,
-            },
-          });
-
-          for (const taskId of incompleteIds) {
-            await prisma.taskActivity.create({
-              data: {
-                taskId,
-                userId: req.userId!,
-                action: 'moved_to_next_sprint',
-                oldValue: existing.name,
-                newValue: nextSprint.name,
-              },
-            });
-          }
-        } else if (incompleteAction === 'backlog') {
-          await prisma.task.updateMany({
-            where: { id: { in: incompleteIds } },
-            data: {
-              sprintId: null,
-              isInBacklog: true,
-              boardId: null,
-              columnId: null,
-            },
-          });
-
-          for (const taskId of incompleteIds) {
-            await prisma.taskActivity.create({
-              data: {
-                taskId,
-                userId: req.userId!,
-                action: 'returned_to_backlog',
-                oldValue: existing.id,
-              },
-            });
-          }
-        }
-        // 'keep' leaves incomplete tasks on the completed sprint
-      }
-
-      const sprint = await prisma.sprint.update({
-        where: { id: req.params.id },
-        data: {
-          status: 'COMPLETED',
-          // Preserve planned end date
-          endDate: existing.endDate || new Date(),
-        },
-        include: {
-          tasks: true,
-        },
-      });
-
-      res.json({
-        sprint,
-        completed: {
-          doneTasks: existing.tasks.filter((t) => t.status === 'DONE').length,
-          incompleteMoved: incompleteAction === 'keep' ? 0 : incompleteIds.length,
-          incompleteAction,
-          nextSprintId: incompleteAction === 'next_sprint' ? nextSprintId : null,
-        },
-      });
-    } catch (error) {
-      console.error('Complete sprint error:', error);
-      res.status(500).json({ error: 'Failed to complete sprint' });
-    }
-  }
-);
-
-// Backward-compatible end → complete with backlog move
+// End sprint
 router.patch(
   '/:id/end',
   authenticate,
   authorize('SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER'),
   async (req: AuthRequest, res) => {
-    req.body = { ...(req.body || {}), incompleteAction: req.body?.incompleteAction || 'backlog' };
-    // Reuse complete handler by forwarding — call same logic inline
     try {
-      const existing = await prisma.sprint.findUnique({
-        where: { id: req.params.id },
-        include: { tasks: { select: { id: true, status: true, title: true } } },
-      });
-      if (!existing) return res.status(404).json({ error: 'Sprint not found' });
-      if (existing.status !== 'ACTIVE') {
-        return res.status(400).json({ error: 'Only active sprints can be completed' });
-      }
-
-      const incompleteAction = (req.body?.incompleteAction as string) || 'backlog';
-      const incompleteIds = existing.tasks.filter((t) => t.status !== 'DONE').map((t) => t.id);
-
-      if (incompleteIds.length > 0 && incompleteAction === 'backlog') {
-        await prisma.task.updateMany({
-          where: { id: { in: incompleteIds } },
-          data: { sprintId: null, isInBacklog: true, boardId: null, columnId: null },
-        });
-      }
-
       const sprint = await prisma.sprint.update({
         where: { id: req.params.id },
-        data: { status: 'COMPLETED', endDate: existing.endDate || new Date() },
-        include: { tasks: true },
+        data: {
+          status: 'COMPLETED',
+          endDate: new Date(),
+        },
+        include: {
+          tasks: true,
+        },
       });
 
       res.json({ sprint });
@@ -522,94 +241,13 @@ router.patch(
   }
 );
 
-// Cancel planned sprint
-router.patch(
-  '/:id/cancel',
-  authenticate,
-  authorize('SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER'),
-  async (req: AuthRequest, res) => {
-    try {
-      const existing = await prisma.sprint.findUnique({
-        where: { id: req.params.id },
-        include: { tasks: { select: { id: true } } },
-      });
-      if (!existing) return res.status(404).json({ error: 'Sprint not found' });
-      if (existing.status !== 'PLANNED') {
-        return res.status(400).json({ error: 'Only planned sprints can be cancelled' });
-      }
-
-      const taskIds = existing.tasks.map((t) => t.id);
-      if (taskIds.length > 0) {
-        await prisma.task.updateMany({
-          where: { id: { in: taskIds } },
-          data: { sprintId: null, isInBacklog: true },
-        });
-      }
-
-      const sprint = await prisma.sprint.update({
-        where: { id: req.params.id },
-        data: { status: 'CANCELLED' },
-      });
-
-      res.json({ sprint });
-    } catch (error) {
-      console.error('Cancel sprint error:', error);
-      res.status(500).json({ error: 'Failed to cancel sprint' });
-    }
-  }
-);
-
-// Delete sprint (planned/cancelled only)
-router.delete(
-  '/:id',
-  authenticate,
-  authorize('SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER'),
-  async (req: AuthRequest, res) => {
-    try {
-      const existing = await prisma.sprint.findUnique({
-        where: { id: req.params.id },
-        include: { _count: { select: { tasks: true } } },
-      });
-      if (!existing) return res.status(404).json({ error: 'Sprint not found' });
-      if (!['PLANNED', 'CANCELLED'].includes(existing.status)) {
-        return res.status(400).json({ error: 'Only planned or cancelled sprints can be deleted' });
-      }
-
-      if (existing._count.tasks > 0) {
-        await prisma.task.updateMany({
-          where: { sprintId: existing.id },
-          data: { sprintId: null, isInBacklog: true },
-        });
-      }
-
-      await prisma.sprint.delete({ where: { id: existing.id } });
-      res.json({ success: true });
-    } catch (error) {
-      console.error('Delete sprint error:', error);
-      res.status(500).json({ error: 'Failed to delete sprint' });
-    }
-  }
-);
-
 // Move task to sprint
 router.patch(
   '/:id/tasks/:taskId',
   authenticate,
-  authorize('SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER', 'TEAM_MEMBER'),
+  authorize('SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER'),
   async (req: AuthRequest, res) => {
     try {
-      const sprint = await prisma.sprint.findUnique({ where: { id: req.params.id } });
-      if (!sprint) return res.status(404).json({ error: 'Sprint not found' });
-      if (sprint.status === 'COMPLETED' || sprint.status === 'CANCELLED') {
-        return res.status(400).json({ error: 'Cannot add tasks to a completed or cancelled sprint' });
-      }
-
-      const existingTask = await prisma.task.findUnique({ where: { id: req.params.taskId } });
-      if (!existingTask) return res.status(404).json({ error: 'Task not found' });
-      if (existingTask.projectId !== sprint.projectId) {
-        return res.status(400).json({ error: 'Task belongs to a different project' });
-      }
-
       const task = await prisma.task.update({
         where: { id: req.params.taskId },
         data: {
@@ -633,17 +271,13 @@ router.patch(
         },
       });
 
-      // If sprint is already active, ensure the task lands on the board
-      if (sprint.status === 'ACTIVE') {
-        await placeTasksOnProjectBoard(sprint.projectId, [task.id]);
-      }
-
+      // Create activity log
       await prisma.taskActivity.create({
         data: {
           taskId: task.id,
           userId: req.userId!,
           action: 'added_to_sprint',
-          newValue: sprint.name,
+          newValue: req.params.id,
         },
       });
 
@@ -655,40 +289,28 @@ router.patch(
   }
 );
 
-// Remove task from sprint → backlog
+// Remove task from sprint
 router.delete(
   '/:id/tasks/:taskId',
   authenticate,
-  authorize('SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER', 'TEAM_MEMBER'),
+  authorize('SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER'),
   async (req: AuthRequest, res) => {
     try {
-      const sprint = await prisma.sprint.findUnique({ where: { id: req.params.id } });
-      if (!sprint) return res.status(404).json({ error: 'Sprint not found' });
-      if (sprint.status === 'COMPLETED' || sprint.status === 'CANCELLED') {
-        return res.status(400).json({ error: 'Cannot change tasks on a completed or cancelled sprint' });
-      }
-
-      const existingTask = await prisma.task.findUnique({ where: { id: req.params.taskId } });
-      if (!existingTask || existingTask.sprintId !== sprint.id) {
-        return res.status(400).json({ error: 'Task is not in this sprint' });
-      }
-
       const task = await prisma.task.update({
         where: { id: req.params.taskId },
         data: {
           sprintId: null,
           isInBacklog: true,
-          boardId: null,
-          columnId: null,
         },
       });
 
+      // Create activity log
       await prisma.taskActivity.create({
         data: {
           taskId: task.id,
           userId: req.userId!,
           action: 'removed_from_sprint',
-          oldValue: sprint.name,
+          oldValue: req.params.id,
         },
       });
 
@@ -732,13 +354,16 @@ router.get('/:id/burndown', authenticate, async (req: AuthRequest, res) => {
     const days = [];
     const startDate = new Date(sprint.startDate);
     const endDate = new Date(sprint.endDate);
+    const today = new Date();
     const totalDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
 
+    // Ensure we have at least one day
     if (totalDays <= 0) {
+      // If start and end are the same day, create one data point
       const completedPoints = sprint.tasks
         .filter((task) => task.status === 'DONE')
         .reduce((sum, task) => sum + (task.storyPoints || 0), 0);
-
+      
       days.push({
         date: startDate.toISOString().split('T')[0],
         completed: completedPoints,
@@ -749,7 +374,9 @@ router.get('/:id/burndown', authenticate, async (req: AuthRequest, res) => {
       for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
         const completedPoints = sprint.tasks
           .filter((task) => {
-            const doneActivity = task.activities.find((a) => new Date(a.createdAt) <= d);
+            const doneActivity = task.activities.find(
+              (a) => new Date(a.createdAt) <= d
+            );
             return doneActivity || (task.status === 'DONE' && new Date(task.updatedAt) <= d);
           })
           .reduce((sum, task) => sum + (task.storyPoints || 0), 0);
@@ -785,3 +412,4 @@ router.get('/:id/burndown', authenticate, async (req: AuthRequest, res) => {
 });
 
 export default router;
+

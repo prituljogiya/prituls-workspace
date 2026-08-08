@@ -15,8 +15,8 @@ interface User {
 interface AuthContextType {
   user: User | null;
   token: string | null;
-  login: (email: string, password: string) => Promise<void>;
-  register: (data: RegisterData) => Promise<void>;
+  login: (email: string, password: string) => Promise<User>;
+  register: (data: RegisterData) => Promise<User>;
   logout: () => void;
   loading: boolean;
 }
@@ -36,22 +36,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Wake the API early so the first real request is less likely to cold-start
-    const base = process.env.NEXT_PUBLIC_API_URL || '/api';
-    fetch(`${base.replace(/\/$/, '')}/health`).catch(() => {});
-
     const storedToken = localStorage.getItem('token');
     const storedUser = localStorage.getItem('user');
 
     if (storedToken && storedUser) {
-      setToken(storedToken);
       try {
+        setToken(storedToken);
         setUser(JSON.parse(storedUser));
+        fetchUser().finally(() => setLoading(false));
+        return;
       } catch {
+        localStorage.removeItem('token');
         localStorage.removeItem('user');
       }
-      // Soft refresh in background — don't block UI on /auth/me
-      fetchUser();
     }
     setLoading(false);
   }, []);
@@ -71,26 +68,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = async (email: string, password: string) => {
     try {
-      // Drop previous session caches so the next dashboard isn't stale
-      try {
-        const keys: string[] = [];
-        for (let i = 0; i < sessionStorage.length; i++) {
-          const k = sessionStorage.key(i);
-          if (k?.startsWith('pms:')) keys.push(k);
-        }
-        keys.forEach((k) => sessionStorage.removeItem(k));
-      } catch {
-        /* ignore */
-      }
-
       const response = await api.post('/auth/login', { email, password });
       const { user, token } = response.data;
-      setUser(user);
-      setToken(token);
+      if (!user || !token) {
+        throw new Error('Login failed. Please try again.');
+      }
+      // Persist first so any request mid-redirect already has the token
       localStorage.setItem('token', token);
       localStorage.setItem('user', JSON.stringify(user));
+      setToken(token);
+      setUser(user);
+      return user;
     } catch (error: any) {
-      const errorMessage = error.response?.data?.error || error.response?.data?.message || 'Login failed. Please try again.';
+      const errorMessage =
+        error.response?.data?.error ||
+        error.response?.data?.message ||
+        error.message ||
+        'Login failed. Please try again.';
       throw new Error(errorMessage);
     }
   };
@@ -99,12 +93,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const response = await api.post('/auth/register', data);
       const { user, token } = response.data;
-      setUser(user);
-      setToken(token);
+      if (!user || !token) {
+        throw new Error('Registration failed. Please try again.');
+      }
       localStorage.setItem('token', token);
       localStorage.setItem('user', JSON.stringify(user));
+      setToken(token);
+      setUser(user);
+      return user;
     } catch (error: any) {
-      const errorMessage = error.response?.data?.error || error.response?.data?.message || 'Registration failed. Please try again.';
+      const errorMessage =
+        error.response?.data?.error ||
+        error.response?.data?.message ||
+        error.message ||
+        'Registration failed. Please try again.';
       throw new Error(errorMessage);
     }
   };
@@ -114,16 +116,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setToken(null);
     localStorage.removeItem('token');
     localStorage.removeItem('user');
-    try {
-      const keys: string[] = [];
-      for (let i = 0; i < sessionStorage.length; i++) {
-        const k = sessionStorage.key(i);
-        if (k?.startsWith('pms:')) keys.push(k);
-      }
-      keys.forEach((k) => sessionStorage.removeItem(k));
-    } catch {
-      /* ignore */
-    }
   };
 
   return (
