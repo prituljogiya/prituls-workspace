@@ -361,13 +361,12 @@ router.post(
       // Create labels if any
       if (template.labels && template.labels.length > 0) {
         await Promise.all(
-          template.labels.map((labelName, index) =>
+          template.labels.map((labelName) =>
             prisma.taskLabel.create({
               data: {
                 taskId: task.id,
                 name: labelName,
                 color: `#${Math.floor(Math.random() * 16777215).toString(16)}`,
-                order: index,
               },
             })
           )
