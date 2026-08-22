@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { prisma } from './prisma';
 
 type CreateNotificationInput = {
@@ -17,7 +18,10 @@ export async function createNotification(input: CreateNotificationInput) {
       title: input.title,
       message: input.message,
       link: input.link || null,
-      meta: input.meta || undefined,
+      meta:
+        input.meta == null
+          ? undefined
+          : (input.meta as Prisma.InputJsonValue),
     },
   });
 }
