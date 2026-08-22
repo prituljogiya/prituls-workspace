@@ -1,9 +1,29 @@
 import express from 'express';
 import { body, validationResult } from 'express-validator';
-import { authenticate, AuthRequest, authorize } from '../middleware/auth';
+import { authenticate, AuthRequest, authorizePermission } from '../middleware/auth';
 import { prisma } from '../utils/prisma';
 
 const router = express.Router();
+
+async function projectIdFromBoard(req: AuthRequest) {
+  const id = req.params.id;
+  if (!id) return undefined;
+  const board = await prisma.board.findUnique({
+    where: { id },
+    select: { projectId: true },
+  });
+  return board?.projectId;
+}
+
+async function projectIdFromColumn(req: AuthRequest) {
+  const columnId = req.params.columnId;
+  if (!columnId) return undefined;
+  const column = await prisma.column.findUnique({
+    where: { id: columnId },
+    select: { board: { select: { projectId: true } } },
+  });
+  return column?.board.projectId;
+}
 
 // Get boards for project
 router.get('/project/:projectId', authenticate, async (req: AuthRequest, res) => {
@@ -23,7 +43,7 @@ router.get('/project/:projectId', authenticate, async (req: AuthRequest, res) =>
           },
         },
         _count: {
-          select: { columns: true },
+          select: { columns: true, tasks: true },
         },
       },
       orderBy: { order: 'asc' },
@@ -97,7 +117,7 @@ router.get('/:id', authenticate, async (req: AuthRequest, res) => {
 router.post(
   '/',
   authenticate,
-  authorize('SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER'),
+  authorizePermission('boards.create'),
   [body('name').trim().notEmpty(), body('projectId').notEmpty()],
   async (req: AuthRequest, res) => {
     try {
@@ -139,7 +159,7 @@ router.post(
 router.patch(
   '/:id',
   authenticate,
-  authorize('SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER'),
+  authorizePermission('boards.manage', projectIdFromBoard),
   async (req: AuthRequest, res) => {
     try {
       const { name, description } = req.body;
@@ -164,7 +184,7 @@ router.patch(
 router.delete(
   '/:id',
   authenticate,
-  authorize('SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER'),
+  authorizePermission('boards.manage', projectIdFromBoard),
   async (req: AuthRequest, res) => {
     try {
       await prisma.board.update({
@@ -184,7 +204,7 @@ router.delete(
 router.post(
   '/:id/columns',
   authenticate,
-  authorize('SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER'),
+  authorizePermission('boards.manage', projectIdFromBoard),
   [body('name').trim().notEmpty()],
   async (req: AuthRequest, res) => {
     try {
@@ -223,7 +243,7 @@ router.post(
 router.patch(
   '/columns/:columnId',
   authenticate,
-  authorize('SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER'),
+  authorizePermission('boards.manage', projectIdFromColumn),
   async (req: AuthRequest, res) => {
     try {
       const { name, color } = req.body;
@@ -248,7 +268,7 @@ router.patch(
 router.delete(
   '/columns/:columnId',
   authenticate,
-  authorize('SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER'),
+  authorizePermission('boards.manage', projectIdFromColumn),
   async (req: AuthRequest, res) => {
     try {
       await prisma.column.delete({
@@ -267,7 +287,7 @@ router.delete(
 router.patch(
   '/:id/columns/reorder',
   authenticate,
-  authorize('SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER'),
+  authorizePermission('boards.manage', projectIdFromBoard),
   [body('columnOrders').isArray()],
   async (req: AuthRequest, res) => {
     try {

@@ -121,10 +121,10 @@ export default function BacklogPage() {
                 <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Backlog</h1>
                 <p className="text-sm text-gray-600 dark:text-gray-400">{filteredTasks.length} tasks</p>
               </div>
-              <RoleGuard allowedRoles={['SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER', 'TEAM_MEMBER']}>
+              <RoleGuard permission="tasks.create">
                 <div className="flex items-center gap-2">
                   {selectedTasks.length > 0 && (
-                    <RoleGuard allowedRoles={['SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER']}>
+                    <RoleGuard permission="sprints.assign">
                       <button
                         onClick={() => setShowMoveModal(true)}
                         className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
@@ -183,13 +183,15 @@ export default function BacklogPage() {
           {filteredTasks.length === 0 ? (
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-12 text-center">
               <p className="text-gray-600 dark:text-gray-400 mb-4">No tasks in backlog</p>
-              <button
-                onClick={createTask}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
-              >
-                <Plus className="h-4 w-4" />
-                Create First Task
-              </button>
+              <RoleGuard permission="tasks.create">
+                <button
+                  onClick={createTask}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
+                >
+                  <Plus className="h-4 w-4" />
+                  Create First Task
+                </button>
+              </RoleGuard>
             </div>
           ) : (
             filteredTasks.map((task) => (
@@ -260,7 +262,7 @@ export default function BacklogPage() {
                       )}
                     </div>
                   </div>
-                  <RoleGuard allowedRoles={['SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER', 'TEAM_MEMBER']}>
+                  <RoleGuard permission="tasks.edit">
                     <button
                       onClick={() => moveToBoard(task.id)}
                       className="px-3 py-1 text-sm text-primary-600 hover:bg-primary-50 rounded-lg flex items-center gap-1"

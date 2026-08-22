@@ -111,7 +111,7 @@ export const authorize = (...rolesOrArray: (string | string[])[]) => {
   };
 };
 
-type ProjectIdResolver = (req: AuthRequest) => string | undefined;
+type ProjectIdResolver = (req: AuthRequest) => string | undefined | Promise<string | undefined>;
 
 /** Check a catalog permission, using project membership role when a project id is known. */
 export const authorizePermission = (
@@ -123,8 +123,9 @@ export const authorizePermission = (
       return res.status(401).json({ error: 'Authentication required' });
     }
 
+    const resolved = projectIdFrom ? await projectIdFrom(req) : undefined;
     const projectId =
-      projectIdFrom?.(req) ||
+      resolved ||
       (typeof req.body?.projectId === 'string' ? req.body.projectId : undefined) ||
       (typeof req.params?.projectId === 'string' ? req.params.projectId : undefined);
 

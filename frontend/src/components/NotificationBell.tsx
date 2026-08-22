@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Bell } from 'lucide-react';
+import { Bell, FileText } from 'lucide-react';
 import api from '@/lib/api';
 
 type NotificationItem = {
@@ -148,10 +148,14 @@ export function NotificationBell() {
                   }`}
                 >
                   <div className="flex items-start gap-2">
-                    {!n.readAt && (
+                    {n.type?.startsWith('INVOICE') ? (
+                      <FileText className="mt-0.5 h-4 w-4 shrink-0 text-primary-600 dark:text-primary-400" />
+                    ) : !n.readAt ? (
                       <span className="mt-1.5 h-2 w-2 rounded-full bg-primary-500 shrink-0" />
+                    ) : (
+                      <span className="mt-1.5 h-2 w-2 shrink-0" />
                     )}
-                    <div className={`min-w-0 flex-1 ${n.readAt ? 'pl-4' : ''}`}>
+                    <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
                         {n.title}
                       </p>

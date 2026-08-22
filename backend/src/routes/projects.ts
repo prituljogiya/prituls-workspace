@@ -4,6 +4,7 @@ import { authenticate, AuthRequest, authorizePermission } from '../middleware/au
 import { prisma } from '../utils/prisma';
 import { githubRepoDisplay, parseGithubRepo } from '../utils/github';
 import { getEffectiveRole, roleHasPermission } from '../permissions/matrix';
+import { isInvoiceModuleVisible, maybeNotifyInvoiceSchedule, getProjectInvoiceSchedule, saveProjectInvoiceSchedule, notifyIfInvoiceModuleOpened } from '../utils/invoiceAccess';
 
 const router = express.Router();
 
@@ -69,6 +70,16 @@ router.get('/', authenticate, async (req: AuthRequest, res) => {
             boards: true,
             members: true,
           },
+        },
+        boards: {
+          where: { isActive: true },
+          select: {
+            id: true,
+            name: true,
+            order: true,
+            updatedAt: true,
+          },
+          orderBy: { order: 'asc' },
         },
       },
       orderBy: { updatedAt: 'desc' },
@@ -320,7 +331,28 @@ router.get('/:id', authenticate, async (req: AuthRequest, res) => {
     }
 
     const myRole = await getEffectiveRole(req.userId!, req.user?.role, project.id);
-    res.json({ project, myRole });
+    const schedule = await getProjectInvoiceSchedule(project.id);
+    const invoicesVisibleToUser = isInvoiceModuleVisible({
+      invoicesEnabled: project.invoicesEnabled,
+      visibleFrom: schedule.visibleFrom,
+      role: myRole,
+    });
+
+    try {
+      await maybeNotifyInvoiceSchedule(project, req.app.get('io') || null);
+    } catch (notifyError) {
+      console.error('Invoice schedule notify error:', notifyError);
+    }
+
+    res.json({
+      project: {
+        ...project,
+        invoicesVisibleFrom: schedule.visibleFrom,
+        invoicesNotifyDay: schedule.notifyDay,
+      },
+      myRole,
+      invoicesVisibleToUser,
+    });
   } catch (error) {
     console.error('Get project error:', error);
     res.status(500).json({ error: 'Failed to get project' });
@@ -397,7 +429,60 @@ router.patch(
   authorizePermission('projects.manage', (req) => req.params.id),
   async (req: AuthRequest, res) => {
     try {
-      const { name, description, color, githubRepo, invoicesEnabled } = req.body;
+      const {
+        name,
+        description,
+        color,
+        githubRepo,
+        invoicesEnabled,
+        invoicesVisibleFrom,
+        invoicesNotifyDay,
+      } = req.body;
+
+      const existing = await prisma.project.findUnique({
+        where: { id: req.params.id },
+        select: { id: true, name: true, invoicesEnabled: true },
+      });
+      if (!existing) {
+        return res.status(404).json({ error: 'Project not found' });
+      }
+      const prevSchedule = await getProjectInvoiceSchedule(req.params.id);
+
+      const schedulePatch: {
+        visibleFrom?: string | null;
+        notifyDay?: number | null;
+        lastNotifiedMonth?: string | null;
+      } = {};
+      let scheduleTouched = false;
+      if (req.user?.role === 'SUPER_ADMIN') {
+        if (invoicesVisibleFrom === null || invoicesVisibleFrom === '') {
+          schedulePatch.visibleFrom = null;
+          scheduleTouched = true;
+        } else if (typeof invoicesVisibleFrom === 'string') {
+          const parsed = new Date(invoicesVisibleFrom);
+          if (Number.isNaN(parsed.getTime())) {
+            return res.status(400).json({ error: 'Invalid invoice visible-from date' });
+          }
+          schedulePatch.visibleFrom = /^\d{4}-\d{2}-\d{2}$/.test(invoicesVisibleFrom)
+            ? invoicesVisibleFrom
+            : parsed.toISOString();
+          scheduleTouched = true;
+        }
+        if (invoicesNotifyDay === null || invoicesNotifyDay === '') {
+          schedulePatch.notifyDay = null;
+          scheduleTouched = true;
+        } else if (invoicesNotifyDay !== undefined) {
+          const day = parseInt(String(invoicesNotifyDay), 10);
+          if (Number.isNaN(day) || day < 1 || day > 28) {
+            return res.status(400).json({ error: 'Notify day must be between 1 and 28' });
+          }
+          schedulePatch.notifyDay = day;
+          scheduleTouched = true;
+        }
+        if (invoicesEnabled === false || scheduleTouched) {
+          schedulePatch.lastNotifiedMonth = null;
+        }
+      }
 
       const data: Record<string, any> = {};
       if (name !== undefined) data.name = name;
@@ -416,23 +501,67 @@ router.patch(
         data.githubRepo = trimmed || null;
       }
 
-      const project = await prisma.project.update({
-        where: { id: req.params.id },
-        data,
-        include: {
-          workspace: true,
-          creator: {
-            select: {
-              id: true,
-              email: true,
-              firstName: true,
-              lastName: true,
-            },
+      const include = {
+        workspace: true,
+        creator: {
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
           },
         },
-      });
+      };
+      const project =
+        Object.keys(data).length > 0
+          ? await prisma.project.update({
+              where: { id: req.params.id },
+              data,
+              include,
+            })
+          : await prisma.project.findUniqueOrThrow({
+              where: { id: req.params.id },
+              include,
+            });
 
-      res.json({ project });
+      let schedule = prevSchedule;
+      if (req.user?.role === 'SUPER_ADMIN' && (scheduleTouched || typeof invoicesEnabled === 'boolean')) {
+        if (scheduleTouched || invoicesEnabled === false) {
+          schedule = await saveProjectInvoiceSchedule(project.id, schedulePatch);
+        }
+
+        const wasVisible = isInvoiceModuleVisible({
+          invoicesEnabled: existing.invoicesEnabled,
+          visibleFrom: prevSchedule.visibleFrom,
+          role: 'VIEWER',
+        });
+        const nowVisible = isInvoiceModuleVisible({
+          invoicesEnabled: project.invoicesEnabled,
+          visibleFrom: schedule.visibleFrom,
+          role: 'VIEWER',
+        });
+        if (!wasVisible && nowVisible) {
+          try {
+            await notifyIfInvoiceModuleOpened({
+              projectId: project.id,
+              projectName: project.name,
+              invoicesEnabled: project.invoicesEnabled,
+              visibleFrom: schedule.visibleFrom,
+              io: req.app.get('io') || null,
+            });
+          } catch (notifyError) {
+            console.error('Invoice open notify error:', notifyError);
+          }
+        }
+      }
+
+      res.json({
+        project: {
+          ...project,
+          invoicesVisibleFrom: schedule.visibleFrom,
+          invoicesNotifyDay: schedule.notifyDay,
+        },
+      });
     } catch (error) {
       console.error('Update project error:', error);
       res.status(500).json({ error: 'Failed to update project' });

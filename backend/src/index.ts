@@ -23,6 +23,7 @@ import documentRoutes from './routes/documents';
 import notificationRoutes from './routes/notifications';
 import settingsRoutes from './routes/settings';
 import contractRoutes from './routes/contracts';
+import permissionRoutes from './routes/permissions';
 
 dotenv.config();
 
@@ -70,6 +71,7 @@ app.use('/api/documents', documentRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/contracts', contractRoutes);
+app.use('/api/permissions', permissionRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

@@ -57,12 +57,12 @@ export function PermissionProvider({ children }: { children: React.ReactNode }) 
         return;
       }
 
+      const pid = overrideProjectId ?? projectId;
       try {
         setLoading(true);
-        if (projectId || overrideProjectId) {
+        if (pid) {
           setEffectiveRole(null);
         }
-        const pid = overrideProjectId ?? projectId;
         const { data } = await api.get('/permissions', {
           params: pid ? { projectId: pid } : undefined,
         });
@@ -70,12 +70,14 @@ export function PermissionProvider({ children }: { children: React.ReactNode }) 
         setMatrix(data.matrix || null);
         setLivePermissionMatrix(data.matrix || null);
         setGlobalRole(data.globalRole || user.role);
-        setEffectiveRole(data.effectiveRole || user.role);
+        // Never fall back to the global role inside a project — a TEAM_MEMBER
+        // who is a project VIEWER must stay a viewer (no Add Task / docs).
+        setEffectiveRole(data.effectiveRole || (pid ? null : user.role));
         setGrants(data.grants || []);
       } catch (error) {
         console.error('Failed to load permissions:', error);
         setGlobalRole(user.role);
-        setEffectiveRole(user.role);
+        setEffectiveRole(pid ? null : user.role);
       } finally {
         setLoading(false);
       }
@@ -113,14 +115,14 @@ export function PermissionProvider({ children }: { children: React.ReactNode }) 
       catalog,
       matrix,
       globalRole,
-      effectiveRole: effectiveRole || user?.role || null,
+      effectiveRole,
       grants,
       loading,
       can,
       refresh,
       saveMatrix,
     }),
-    [catalog, matrix, globalRole, effectiveRole, grants, loading, can, refresh, saveMatrix, user?.role]
+    [catalog, matrix, globalRole, effectiveRole, grants, loading, can, refresh, saveMatrix]
   );
 
   return <PermissionContext.Provider value={value}>{children}</PermissionContext.Provider>;

@@ -24,6 +24,7 @@ import {
   Columns3,
   History,
   Shield,
+  Search,
 } from 'lucide-react';
 import { RoleGuard } from './RoleGuard';
 import { usePermissions } from '@/contexts/PermissionContext';
@@ -55,6 +56,7 @@ export function Sidebar({ projectId }: SidebarProps) {
   const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>({});
   const [projectsLoading, setProjectsLoading] = useState(false);
   const [showAllProjects, setShowAllProjects] = useState(false);
+  const [projectQuery, setProjectQuery] = useState('');
   const PROJECT_PREVIEW_COUNT = 3;
 
   // Extract projectId from pathname if not provided.
@@ -130,7 +132,8 @@ export function Sidebar({ projectId }: SidebarProps) {
       .get(`/projects/${extractedProjectId}`)
       .then((res) => {
         if (cancelled) return;
-        const enabled = !!res.data.project?.invoicesEnabled;
+        const visible = res.data.invoicesVisibleToUser;
+        const enabled = typeof visible === 'boolean' ? visible : !!res.data.project?.invoicesEnabled;
         setInvoicesEnabled(enabled);
         try {
           sessionStorage.setItem(cacheKey, enabled ? '1' : '0');
@@ -170,10 +173,22 @@ export function Sidebar({ projectId }: SidebarProps) {
     return [current, ...projects.filter((p) => p.id !== extractedProjectId)];
   }, [projects, extractedProjectId]);
 
-  const visibleProjects = showAllProjects
-    ? orderedProjects
-    : orderedProjects.slice(0, PROJECT_PREVIEW_COUNT);
-  const hiddenCount = Math.max(0, orderedProjects.length - PROJECT_PREVIEW_COUNT);
+  const filteredProjects = useMemo(() => {
+    const q = projectQuery.trim().toLowerCase();
+    if (!q) return orderedProjects;
+    return orderedProjects.filter((p) => {
+      if (p.name.toLowerCase().includes(q)) return true;
+      return (p.boards || []).some((b) => b.name.toLowerCase().includes(q));
+    });
+  }, [orderedProjects, projectQuery]);
+
+  const searching = projectQuery.trim().length > 0;
+  const visibleProjects = searching
+    ? filteredProjects
+    : showAllProjects
+      ? orderedProjects
+      : orderedProjects.slice(0, PROJECT_PREVIEW_COUNT);
+  const hiddenCount = searching ? 0 : Math.max(0, orderedProjects.length - PROJECT_PREVIEW_COUNT);
 
   const isActive = (path: string) => {
     if (!pathname) return false;
@@ -316,19 +331,34 @@ export function Sidebar({ projectId }: SidebarProps) {
               </Link>
             </RoleGuard>
           </div>
+          <div className="px-3 mb-2">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+              <input
+                value={projectQuery}
+                onChange={(e) => setProjectQuery(e.target.value)}
+                placeholder="Find project or board…"
+                className="w-full pl-8 pr-2 py-1.5 text-xs rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+              />
+            </div>
+          </div>
 
           {projectsLoading && (
             <p className="px-3 py-2 text-xs text-gray-400 dark:text-gray-500">Loading…</p>
           )}
 
-          {!projectsLoading && projects.length === 0 && (
-            <p className="px-3 py-2 text-xs text-gray-400 dark:text-gray-500">No projects yet</p>
+          {!projectsLoading && searching && filteredProjects.length === 0 && (
+            <p className="px-3 py-2 text-xs text-gray-400 dark:text-gray-500">No matching projects or boards</p>
           )}
 
           {visibleProjects.map((project) => {
-            const expanded = !!expandedProjects[project.id];
+            const expanded = searching || !!expandedProjects[project.id];
             const isCurrent = project.id === extractedProjectId;
-            const boards = project.boards || [];
+            const q = projectQuery.trim().toLowerCase();
+            const projectNameMatch = !q || project.name.toLowerCase().includes(q);
+            const boards = (project.boards || []).filter(
+              (board) => projectNameMatch || board.name.toLowerCase().includes(q)
+            );
 
             return (
               <div key={project.id} className="mb-1">

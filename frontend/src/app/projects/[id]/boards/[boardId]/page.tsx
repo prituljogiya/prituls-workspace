@@ -6,8 +6,9 @@ import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { Layout } from '@/components/Layout';
 import { BoardView } from '@/components/BoardView';
+import { BoardSwitcher } from '@/components/BoardSwitcher';
 import api from '@/lib/api';
-import { ArrowLeft, Settings } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 
 export default function BoardDetailPage() {
   const router = useRouter();
@@ -52,15 +53,26 @@ export default function BoardDetailPage() {
       <div className="h-screen flex flex-col">
         <header className="bg-white dark:bg-gray-800 shadow-sm border-b dark:border-gray-700 flex-shrink-0 sticky top-0 z-10">
           <div className="px-6 py-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{board?.name || 'Board'}</h1>
-                <p className="text-sm text-gray-600 dark:text-gray-400">{board?.description || ''}</p>
+            <div className="flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <div className="flex items-center gap-3">
+                  <Link
+                    href={`/projects/${params.id}/boards`}
+                    className="text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white"
+                    title="All boards"
+                  >
+                    <ArrowLeft className="h-5 w-5" />
+                  </Link>
+                  <BoardSwitcher
+                    projectId={params.id as string}
+                    currentBoardId={params.boardId as string}
+                    currentName={board?.name}
+                  />
+                </div>
+                {board?.description ? (
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 ml-8">{board.description}</p>
+                ) : null}
               </div>
-              <button className="flex items-center gap-2 px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white">
-                <Settings className="h-4 w-4" />
-                Settings
-              </button>
             </div>
           </div>
         </header>

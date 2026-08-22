@@ -61,6 +61,7 @@ export default function InvoicesPage() {
   const [workspaceName, setWorkspaceName] = useState('');
   const [formData, setFormData] = useState(emptyForm);
   const [monthFilter, setMonthFilter] = useState('');
+  const [accessError, setAccessError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -77,8 +78,10 @@ export default function InvoicesPage() {
     try {
       const response = await api.get(`/invoices/project/${params.id}`);
       setInvoices(response.data.invoices || []);
-    } catch (error) {
+      setAccessError(null);
+    } catch (error: any) {
       console.error('Failed to fetch invoices:', error);
+      setAccessError(error.response?.data?.error || 'Unable to load invoices');
     } finally {
       setLoading(false);
     }
@@ -424,6 +427,15 @@ export default function InvoicesPage() {
           </div>
 
           {/* Invoices List */}
+          {accessError ? (
+            <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-8 text-center">
+              <FileText className="h-10 w-10 mx-auto mb-3 text-gray-300 dark:text-gray-600" />
+              <p className="text-gray-700 dark:text-gray-200 font-medium">{accessError}</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
+                If invoices are scheduled, they will appear here on the date set by the project admin. You will also get a notification.
+              </p>
+            </div>
+          ) : (
           <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
             <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex flex-wrap items-center justify-between gap-3">
               <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide">
@@ -593,6 +605,7 @@ export default function InvoicesPage() {
               )}
             </div>
           </div>
+          )}
         </div>
 
         {/* Create Invoice Modal */}

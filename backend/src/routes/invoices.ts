@@ -4,36 +4,59 @@ import { authenticate, AuthRequest, authorize } from '../middleware/auth';
 import { prisma } from '../utils/prisma';
 import PDFDocument from 'pdfkit';
 import { notifyInvoiceClient } from '../utils/notifications';
+import { getEffectiveRole } from '../permissions/matrix';
+import { getProjectInvoiceSchedule, isInvoiceModuleVisible, notifyInvoiceViewers } from '../utils/invoiceAccess';
 import { formatBillingMonth, normalizeBillingMonth } from '../utils/billingMonth';
 
 const router = express.Router();
 
+type InvoiceAccessResult =
+  | { project: { id: string; invoicesEnabled: boolean } }
+  | { error: string; status: 403 | 404; visibleFrom?: string | null };
+
 async function assertInvoiceModuleAccess(
   projectId: string,
+  userId?: string,
   userRole?: string,
   opts?: { allowManagersWhenDisabled?: boolean }
-) {
+): Promise<InvoiceAccessResult> {
   const project = await prisma.project.findUnique({
     where: { id: projectId },
-    select: { id: true, invoicesEnabled: true },
+    select: {
+      id: true,
+      invoicesEnabled: true,
+    },
   });
   if (!project) {
     return { error: 'Project not found', status: 404 as const };
   }
-  // Super Admin always has invoice access
-  if (userRole === 'SUPER_ADMIN') {
+  const role = userId ? await getEffectiveRole(userId, userRole, projectId) : userRole;
+  const schedule = await getProjectInvoiceSchedule(projectId);
+  if (role === 'SUPER_ADMIN') {
     return { project };
   }
-  // Managers can open project invoices / create even before the toggle is on
   if (
     opts?.allowManagersWhenDisabled &&
-    userRole &&
-    ['WORKSPACE_OWNER', 'PROJECT_MANAGER'].includes(userRole)
+    role &&
+    ['WORKSPACE_OWNER', 'PROJECT_MANAGER'].includes(role)
   ) {
     return { project };
   }
-  if (!project.invoicesEnabled) {
-    return { error: 'Invoices module is disabled for this project', status: 403 as const };
+  if (
+    !isInvoiceModuleVisible({
+      role,
+      invoicesEnabled: project.invoicesEnabled,
+      visibleFrom: schedule.visibleFrom,
+    })
+  ) {
+    if (!project.invoicesEnabled) {
+      return { error: 'Invoices module is disabled for this project', status: 403 as const };
+    }
+    return {
+      error: 'Invoices are scheduled and not visible yet',
+      status: 403 as const,
+      visibleFrom: schedule.visibleFrom,
+    };
   }
   return { project };
 }
@@ -89,7 +112,7 @@ function hasAnyBankDetails(details: Partial<Record<BankField, string | null | un
 // Get invoices for a project
 router.get('/project/:projectId', authenticate, async (req: AuthRequest, res) => {
   try {
-    const access = await assertInvoiceModuleAccess(req.params.projectId, req.user?.role, {
+    const access = await assertInvoiceModuleAccess(req.params.projectId, req.userId, req.user?.role, {
       allowManagersWhenDisabled: true,
     });
     if ('error' in access) {
@@ -455,6 +478,15 @@ router.post(
         billingMonth: invoice.billingMonth,
         io: req.app.get('io'),
       });
+      await notifyInvoiceViewers({
+        projectId: invoice.projectId,
+        projectName: invoice.project?.name,
+        title: 'New invoice available',
+        message: `Invoice ${invoice.invoiceNumber} was generated for ${invoice.project?.name || 'your project'}.`,
+        type: 'INVOICE_GENERATED',
+        skipUserIds: notifyResult.userId ? [notifyResult.userId] : [],
+        io: req.app.get('io'),
+      });
 
       res.status(201).json({ invoice, notification: notifyResult });
     } catch (error: any) {
@@ -621,6 +653,15 @@ router.post(
         projectId: invoice.projectId,
         projectName: invoice.project?.name,
         billingMonth: invoice.billingMonth,
+        io: req.app.get('io'),
+      });
+      await notifyInvoiceViewers({
+        projectId: invoice.projectId,
+        projectName: invoice.project?.name,
+        title: 'New invoice available',
+        message: `Invoice ${invoice.invoiceNumber} was generated for ${invoice.project?.name || 'your project'}.`,
+        type: 'INVOICE_GENERATED',
+        skipUserIds: notifyResult.userId ? [notifyResult.userId] : [],
         io: req.app.get('io'),
       });
 
@@ -863,7 +904,7 @@ router.get('/:id/pdf', authenticate, async (req: AuthRequest, res) => {
       return res.status(404).json({ error: 'Invoice not found' });
     }
 
-    const access = await assertInvoiceModuleAccess(invoice.projectId, req.user?.role);
+    const access = await assertInvoiceModuleAccess(invoice.projectId, req.userId, req.user?.role);
     if ('error' in access) {
       return res.status(access.status).json({ error: access.error });
     }

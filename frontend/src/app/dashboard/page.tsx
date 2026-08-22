@@ -228,22 +228,44 @@ export default function DashboardPage() {
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {data.projects.map((project) => (
-                <Link
+                <div
                   key={project.id}
-                  href={`/projects/${project.id}`}
                   className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 hover:shadow-lg transition-shadow"
                 >
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-                    {project.name}
-                  </h3>
-                  <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                    {project.description || 'No description'}
-                  </p>
-                  <div className="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
-                    <span>{project._count.tasks} tasks</span>
-                    <span>{project._count.boards} boards</span>
+                  <Link href={`/projects/${project.id}`}>
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+                      {project.name}
+                    </h3>
+                    <p className="text-sm text-gray-600 dark:text-gray-400 mb-4 line-clamp-2">
+                      {project.description || 'No description'}
+                    </p>
+                  </Link>
+                  <div className="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400 mb-3">
+                    <span>{project._count?.tasks || 0} tasks</span>
+                    <span>{project._count?.boards || 0} boards</span>
                   </div>
-                </Link>
+                  {project.boards?.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {project.boards.slice(0, 4).map((board: any) => (
+                        <Link
+                          key={board.id}
+                          href={`/projects/${project.id}/boards/${board.id}`}
+                          className="px-2 py-1 text-xs rounded-md bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-primary-100 dark:hover:bg-primary-900/40 hover:text-primary-700 dark:hover:text-primary-300"
+                        >
+                          {board.name}
+                        </Link>
+                      ))}
+                      {project.boards.length > 4 && (
+                        <Link
+                          href={`/projects/${project.id}/boards`}
+                          className="px-2 py-1 text-xs rounded-md text-primary-600 dark:text-primary-400 hover:underline"
+                        >
+                          +{project.boards.length - 4} more
+                        </Link>
+                      )}
+                    </div>
+                  )}
+                </div>
               ))}
             </div>
           </div>

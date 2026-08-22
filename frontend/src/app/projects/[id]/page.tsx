@@ -7,6 +7,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import api from '@/lib/api';
 import { Layout } from '@/components/Layout';
 import { RoleGuard } from '@/components/RoleGuard';
+import { BoardSwitcher } from '@/components/BoardSwitcher';
 import { Settings, Users, Plus, History } from 'lucide-react';
 
 export default function ProjectPage() {
@@ -57,7 +58,10 @@ export default function ProjectPage() {
           <div className="px-6 py-4">
             <div className="flex items-center justify-between">
               <div>
-                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{project.name}</h1>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{project.name}</h1>
+                  <BoardSwitcher projectId={params.id as string} />
+                </div>
                 <p className="text-sm text-gray-600 dark:text-gray-400">{project.description || 'No description'}</p>
               </div>
             <div className="flex items-center gap-2">

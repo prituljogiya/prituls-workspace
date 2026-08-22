@@ -30,6 +30,8 @@ export default function ProjectSettingsPage() {
     description: '',
     color: '#6366f1',
     invoicesEnabled: false,
+    invoicesVisibleFrom: '',
+    invoicesNotifyDay: '',
     githubRepo: '',
   });
 
@@ -44,6 +46,10 @@ export default function ProjectSettingsPage() {
         description: proj.description || '',
         color: proj.color || '#6366f1',
         invoicesEnabled: !!proj.invoicesEnabled,
+        invoicesVisibleFrom: proj.invoicesVisibleFrom
+          ? String(proj.invoicesVisibleFrom).slice(0, 10)
+          : '',
+        invoicesNotifyDay: proj.invoicesNotifyDay ? String(proj.invoicesNotifyDay) : '',
         githubRepo: proj.githubRepo || '',
       });
     } catch (error) {
@@ -84,6 +90,10 @@ export default function ProjectSettingsPage() {
       // Only Super Admin can show/hide the Invoices module
       if (user?.role && canManageInvoices(user.role)) {
         payload.invoicesEnabled = formData.invoicesEnabled;
+        payload.invoicesVisibleFrom = formData.invoicesVisibleFrom || null;
+        payload.invoicesNotifyDay = formData.invoicesNotifyDay
+          ? parseInt(formData.invoicesNotifyDay, 10)
+          : null;
       }
       await api.patch(`/projects/${projectId}`, payload);
       if (typeof payload.invoicesEnabled === 'boolean') {
@@ -206,30 +216,69 @@ export default function ProjectSettingsPage() {
                   </p>
                 </div>
                 <RoleGuard permission="invoices.manage">
-                  <div className="flex items-start justify-between gap-4 p-4 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900/40">
-                    <div>
-                      <p className="text-sm font-medium text-gray-900 dark:text-white">Invoices module</p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                        You always see Invoices. Turn this on so VIEWER (and other allowed roles) can view invoices for this project.
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={formData.invoicesEnabled}
-                      onClick={() =>
-                        setFormData({ ...formData, invoicesEnabled: !formData.invoicesEnabled })
-                      }
-                      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
-                        formData.invoicesEnabled ? 'bg-primary-600' : 'bg-gray-300 dark:bg-gray-600'
-                      }`}
-                    >
-                      <span
-                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${
-                          formData.invoicesEnabled ? 'translate-x-6' : 'translate-x-1'
+                  <div className="space-y-4 p-4 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900/40">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <p className="text-sm font-medium text-gray-900 dark:text-white">Invoices module</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                          You always see Invoices. Turn this on so viewers can see them — optionally on a schedule.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={formData.invoicesEnabled}
+                        onClick={() =>
+                          setFormData({ ...formData, invoicesEnabled: !formData.invoicesEnabled })
+                        }
+                        className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
+                          formData.invoicesEnabled ? 'bg-primary-600' : 'bg-gray-300 dark:bg-gray-600'
                         }`}
-                      />
-                    </button>
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${
+                            formData.invoicesEnabled ? 'translate-x-6' : 'translate-x-1'
+                          }`}
+                        />
+                      </button>
+                    </div>
+                    {formData.invoicesEnabled && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-gray-200 dark:border-gray-700">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            Show to viewers from
+                          </label>
+                          <input
+                            type="date"
+                            value={formData.invoicesVisibleFrom}
+                            onChange={(e) =>
+                              setFormData({ ...formData, invoicesVisibleFrom: e.target.value })
+                            }
+                            className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                          />
+                          <p className="text-[11px] text-gray-500 mt-1">Leave empty to show immediately.</p>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            Monthly notify day (1–28)
+                          </label>
+                          <input
+                            type="number"
+                            min={1}
+                            max={28}
+                            value={formData.invoicesNotifyDay}
+                            onChange={(e) =>
+                              setFormData({ ...formData, invoicesNotifyDay: e.target.value })
+                            }
+                            placeholder="e.g. 5"
+                            className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                          />
+                          <p className="text-[11px] text-gray-500 mt-1">
+                            Viewers get a notification on this day each month.
+                          </p>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </RoleGuard>
                 <RoleGuard permission="projects.manage">

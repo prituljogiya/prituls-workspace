@@ -22,7 +22,8 @@ import {
 import { Column } from './Column';
 import { TaskCard } from './TaskCard';
 import api from '@/lib/api';
-import { Plus, MoreVertical } from 'lucide-react';
+import { Plus } from 'lucide-react';
+import { usePermissions } from '@/contexts/PermissionContext';
 
 interface BoardViewProps {
   boardId: string;
@@ -30,6 +31,9 @@ interface BoardViewProps {
 }
 
 export function BoardView({ boardId, projectId }: BoardViewProps) {
+  const { can } = usePermissions();
+  const canManageBoard = can('boards.manage');
+  const canMoveTasks = can('tasks.edit');
   const [board, setBoard] = useState<any>(null);
   const [columns, setColumns] = useState<any[]>([]);
   const [tasks, setTasks] = useState<any[]>([]);
@@ -73,6 +77,7 @@ export function BoardView({ boardId, projectId }: BoardViewProps) {
   };
 
   const handleDragEnd = async (event: DragEndEvent) => {
+    if (!canMoveTasks && !canManageBoard) return;
     const { active, over } = event;
     setActiveId(null);
 
@@ -213,7 +218,8 @@ export function BoardView({ boardId, projectId }: BoardViewProps) {
             })}
           </SortableContext>
 
-          {/* Add Column Button - Jira Style */}
+          {/* Add Column Button */}
+          {canManageBoard && (
           <div className="min-w-[280px] flex-shrink-0">
             <button
               onClick={() => {
@@ -226,6 +232,7 @@ export function BoardView({ boardId, projectId }: BoardViewProps) {
               <span className="text-sm font-medium">Add Column</span>
             </button>
           </div>
+          )}
         </div>
 
         <DragOverlay>

@@ -1,13 +1,15 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import api from '@/lib/api';
 import { Layout } from '@/components/Layout';
 import { RoleGuard } from '@/components/RoleGuard';
-import { Plus, MoreVertical, Edit2, Trash2 } from 'lucide-react';
+import { BoardSwitcher } from '@/components/BoardSwitcher';
+import { Plus, Trash2, Search, Columns3, LayoutDashboard } from 'lucide-react';
+import { format } from 'date-fns';
 
 export default function BoardsPage() {
   const router = useRouter();
@@ -15,6 +17,7 @@ export default function BoardsPage() {
   const { user, loading: authLoading } = useAuth();
   const [boards, setBoards] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newBoardName, setNewBoardName] = useState('');
   const [newBoardDesc, setNewBoardDesc] = useState('');
@@ -32,7 +35,7 @@ export default function BoardsPage() {
   const fetchBoards = async () => {
     try {
       const response = await api.get(`/boards/project/${params.id}`);
-      setBoards(response.data.boards);
+      setBoards(response.data.boards || []);
     } catch (error) {
       console.error('Failed to fetch boards:', error);
     } finally {
@@ -51,6 +54,7 @@ export default function BoardsPage() {
       setShowCreateModal(false);
       setNewBoardName('');
       setNewBoardDesc('');
+      router.push(`/projects/${params.id}/boards/${response.data.board.id}`);
     } catch (error: any) {
       alert(error.response?.data?.error || 'Failed to create board');
     }
@@ -66,6 +70,16 @@ export default function BoardsPage() {
     }
   };
 
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return boards;
+    return boards.filter(
+      (b) =>
+        b.name?.toLowerCase().includes(q) ||
+        b.description?.toLowerCase().includes(q)
+    );
+  }, [boards, query]);
+
   if (loading || authLoading) {
     return (
       <Layout projectId={params.id as string}>
@@ -80,10 +94,18 @@ export default function BoardsPage() {
     <Layout projectId={params.id as string}>
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
         <header className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700 sticky top-0 z-10">
-          <div className="px-6 py-4">
-            <div className="flex items-center justify-between">
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Boards</h1>
-              <RoleGuard allowedRoles={['SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER']}>
+          <div className="px-6 py-4 space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Boards</h1>
+                  <BoardSwitcher projectId={params.id as string} />
+                </div>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  {boards.length} board{boards.length === 1 ? '' : 's'} · search and jump in
+                </p>
+              </div>
+              <RoleGuard permission="boards.create">
                 <button
                   type="button"
                   onClick={() => setShowCreateModal(true)}
@@ -94,76 +116,91 @@ export default function BoardsPage() {
                 </button>
               </RoleGuard>
             </div>
+            {boards.length > 0 && (
+              <div className="relative max-w-md">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Find a board by name…"
+                  className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                />
+              </div>
+            )}
           </div>
         </header>
 
         <main className="p-6">
           {boards.length === 0 ? (
             <div className="text-center py-12">
+              <LayoutDashboard className="h-12 w-12 mx-auto mb-3 text-gray-300 dark:text-gray-600" />
               <p className="text-gray-600 dark:text-gray-400 mb-4">
                 No boards yet. Create your first board to get started!
               </p>
-              <button
-                type="button"
-                onClick={() => setShowCreateModal(true)}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
-              >
-                <Plus className="h-4 w-4" />
-                Create Board
-              </button>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {boards.map((board) => (
-                <div
-                  key={board.id}
-                  className="bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 hover:shadow-lg transition-shadow p-6 relative group"
+              <RoleGuard permission="boards.create">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateModal(true)}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
                 >
-                  <Link href={`/projects/${params.id}/boards/${board.id}`}>
-                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-                      {board.name}
-                    </h3>
-                    <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                      {board.description || 'No description'}
-                    </p>
-                    <div className="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
-                      <span>{board._count?.columns || 0} columns</span>
-                    </div>
-                  </Link>
-                  <RoleGuard allowedRoles={['SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER']}>
-                    <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <div className="relative">
-                        <button
-                          type="button"
-                          className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-gray-600 dark:text-gray-300"
-                        >
-                          <MoreVertical className="h-4 w-4" />
-                        </button>
-                        <div className="absolute right-0 mt-1 w-32 bg-white dark:bg-gray-800 rounded shadow-lg border border-gray-200 dark:border-gray-700 hidden group-hover:block">
-                          <button
-                            type="button"
-                            className="w-full text-left px-4 py-2 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200"
-                          >
-                            <Edit2 className="h-4 w-4" />
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              deleteBoard(board.id);
-                            }}
-                            className="w-full text-left px-4 py-2 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2 text-sm text-red-600 dark:text-red-400"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                            Delete
-                          </button>
+                  <Plus className="h-4 w-4" />
+                  Create Board
+                </button>
+              </RoleGuard>
+            </div>
+          ) : filtered.length === 0 ? (
+            <p className="text-sm text-gray-500 dark:text-gray-400">No boards match “{query}”.</p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {filtered.map((board) => {
+                const taskCount =
+                  board._count?.tasks ??
+                  board.columns?.reduce((sum: number, col: any) => sum + (col._count?.tasks || 0), 0) ??
+                  0;
+                return (
+                  <div
+                    key={board.id}
+                    className="bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 hover:border-primary-400 dark:hover:border-primary-500 hover:shadow-lg transition-all p-5 relative group"
+                  >
+                    <Link href={`/projects/${params.id}/boards/${board.id}`} className="block">
+                      <div className="flex items-start gap-3">
+                        <div className="h-10 w-10 rounded-lg bg-primary-50 dark:bg-primary-900/30 flex items-center justify-center shrink-0">
+                          <Columns3 className="h-5 w-5 text-primary-600 dark:text-primary-400" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <h3 className="text-lg font-semibold text-gray-900 dark:text-white truncate">
+                            {board.name}
+                          </h3>
+                          <p className="text-sm text-gray-600 dark:text-gray-400 mt-0.5 line-clamp-2">
+                            {board.description || 'Open this board'}
+                          </p>
                         </div>
                       </div>
-                    </div>
-                  </RoleGuard>
-                </div>
-              ))}
+                      <div className="mt-4 flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
+                        <span>{board._count?.columns || board.columns?.length || 0} columns</span>
+                        <span>·</span>
+                        <span>{taskCount} tasks</span>
+                        {board.updatedAt && (
+                          <>
+                            <span>·</span>
+                            <span>Updated {format(new Date(board.updatedAt), 'MMM d')}</span>
+                          </>
+                        )}
+                      </div>
+                    </Link>
+                    <RoleGuard permission="boards.manage">
+                      <button
+                        type="button"
+                        onClick={() => deleteBoard(board.id)}
+                        className="absolute top-3 right-3 p-1.5 rounded text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 opacity-0 group-hover:opacity-100 transition-opacity"
+                        title="Delete board"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </RoleGuard>
+                  </div>
+                );
+              })}
             </div>
           )}
         </main>
