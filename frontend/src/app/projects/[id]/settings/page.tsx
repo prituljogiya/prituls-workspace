@@ -205,7 +205,7 @@ export default function ProjectSettingsPage() {
                     Used by the Pull Requests page. Private repos need GITHUB_TOKEN in backend .env.
                   </p>
                 </div>
-                <RoleGuard allowedRoles={['SUPER_ADMIN']}>
+                <RoleGuard permission="invoices.manage">
                   <div className="flex items-start justify-between gap-4 p-4 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900/40">
                     <div>
                       <p className="text-sm font-medium text-gray-900 dark:text-white">Invoices module</p>
@@ -232,7 +232,7 @@ export default function ProjectSettingsPage() {
                     </button>
                   </div>
                 </RoleGuard>
-                <RoleGuard allowedRoles={['SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER']}>
+                <RoleGuard permission="projects.manage">
                   <button
                     onClick={handleSave}
                     disabled={saving}
@@ -251,7 +251,7 @@ export default function ProjectSettingsPage() {
                   <Users className="h-5 w-5" />
                   Team Members ({project.members?.length || 0})
                 </h2>
-                <RoleGuard allowedRoles={['SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER']}>
+                <RoleGuard permission="projects.manage">
                   <Link
                     href={`/projects/${projectId}/members`}
                     className="text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 text-sm"
@@ -296,7 +296,7 @@ export default function ProjectSettingsPage() {
               </Link>
             </div>
 
-            <RoleGuard allowedRoles={['SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER']}>
+            <RoleGuard permission="projects.manage">
               <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 border-2 border-red-200 dark:border-red-700">
                 <h2 className="text-lg font-semibold text-red-900 dark:text-red-300 mb-4">Danger Zone</h2>
                 <div className="space-y-4">

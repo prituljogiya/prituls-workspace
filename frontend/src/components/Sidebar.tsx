@@ -22,9 +22,11 @@ import {
   ChevronDown,
   ChevronRight,
   Columns3,
+  History,
+  Shield,
 } from 'lucide-react';
 import { RoleGuard } from './RoleGuard';
-import { hasRole, canViewInvoices } from '@/utils/rbac';
+import { usePermissions } from '@/contexts/PermissionContext';
 import api from '@/lib/api';
 
 interface SidebarBoard {
@@ -47,6 +49,7 @@ interface SidebarProps {
 export function Sidebar({ projectId }: SidebarProps) {
   const pathname = usePathname();
   const { user } = useAuth();
+  const { can } = usePermissions();
   const [invoicesEnabled, setInvoicesEnabled] = useState(false);
   const [projects, setProjects] = useState<SidebarProject[]>([]);
   const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>({});
@@ -210,42 +213,50 @@ export function Sidebar({ projectId }: SidebarProps) {
           name: 'Documents',
           href: `/projects/${extractedProjectId}/documents`,
           icon: BookOpen,
+          permission: 'documents.view',
+        },
+        {
+          name: 'Timeline',
+          href: `/projects/${extractedProjectId}/timeline`,
+          icon: History,
+          permission: 'timeline.view',
         },
         {
           name: 'Time Tracking',
           href: `/projects/${extractedProjectId}/time-tracking`,
           icon: Clock,
-          roles: ['SUPER_ADMIN', 'TEAM_MEMBER', 'WORKSPACE_OWNER', 'PROJECT_MANAGER'],
+          permission: 'time.view',
         },
         {
           name: 'Pull Requests',
           href: `/projects/${extractedProjectId}/pull-requests`,
           icon: GitPullRequest,
+          permission: 'pullRequests.view',
         },
         {
           name: 'Invoices',
           href: `/projects/${extractedProjectId}/invoices`,
           icon: FileText,
-          roles: ['SUPER_ADMIN', 'VIEWER', 'WORKSPACE_OWNER', 'PROJECT_MANAGER'],
+          permission: 'invoices.view',
           requiresInvoicesEnabled: true,
         },
         {
           name: 'Reports',
           href: `/projects/${extractedProjectId}/reports`,
           icon: BarChart3,
-          roles: ['SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER'],
+          permission: 'reports.view',
         },
         {
           name: 'Settings',
           href: `/projects/${extractedProjectId}/settings`,
           icon: Settings,
-          roles: ['SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER'],
+          permission: 'projects.manage',
         },
         {
           name: 'Members',
           href: `/projects/${extractedProjectId}/members`,
           icon: Users,
-          roles: ['SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER'],
+          permission: 'members.manage',
         },
       ]
     : [];
@@ -278,7 +289,7 @@ export function Sidebar({ projectId }: SidebarProps) {
           <span>Dashboard</span>
         </Link>
 
-        <RoleGuard allowedRoles={['SUPER_ADMIN', 'WORKSPACE_OWNER']}>
+        <RoleGuard permission="workspaces.manage">
           <Link
             href="/workspaces/new"
             className="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
@@ -294,7 +305,7 @@ export function Sidebar({ projectId }: SidebarProps) {
             <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
               Projects
             </p>
-            <RoleGuard allowedRoles={['SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER']}>
+            <RoleGuard permission="projects.create">
               <Link
                 href="/projects/new"
                 className="inline-flex items-center gap-0.5 text-xs font-medium text-primary-600 dark:text-primary-400 hover:underline"
@@ -411,18 +422,18 @@ export function Sidebar({ projectId }: SidebarProps) {
             </p>
             {projectLinks.map((link) => {
               const Icon = link.icon;
-              if (link.roles && user?.role && !hasRole(user.role, link.roles)) {
+              if (link.permission && !can(link.permission)) {
                 return null;
               }
               if (
                 (link as any).requiresInvoicesEnabled &&
-                user?.role !== 'SUPER_ADMIN' &&
+                !can('invoices.manage') &&
                 !['WORKSPACE_OWNER', 'PROJECT_MANAGER'].includes(user?.role || '') &&
                 !invoicesEnabled
               ) {
                 return null;
               }
-              if ((link as any).requiresInvoicesEnabled && user?.role && !canViewInvoices(user.role)) {
+              if ((link as any).requiresInvoicesEnabled && !can('invoices.view')) {
                 return null;
               }
               return (
@@ -444,7 +455,7 @@ export function Sidebar({ projectId }: SidebarProps) {
         )}
 
         {/* Admin Links */}
-        <RoleGuard allowedRoles={['SUPER_ADMIN', 'WORKSPACE_OWNER']}>
+        <RoleGuard permission="users.manage">
           <div className="pt-4 mt-4 border-t border-gray-200 dark:border-gray-800">
             <p className="px-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
               Admin
@@ -460,6 +471,19 @@ export function Sidebar({ projectId }: SidebarProps) {
               <UserPlus className="h-5 w-5" />
               <span>Manage Users</span>
             </Link>
+            <RoleGuard permission="permissions.manage">
+              <Link
+                href="/admin/permissions"
+                className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
+                  isActive('/admin/permissions')
+                    ? 'bg-primary-600 text-white'
+                    : 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800'
+                }`}
+              >
+                <Shield className="h-5 w-5" />
+                <span>Permissions</span>
+              </Link>
+            </RoleGuard>
           </div>
         </RoleGuard>
       </nav>

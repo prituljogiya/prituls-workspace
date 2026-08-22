@@ -17,6 +17,7 @@ import {
   FileText,
   Github,
   FileSignature,
+  Shield,
 } from 'lucide-react';
 
 export function AppHeader() {
@@ -39,7 +40,7 @@ export function AppHeader() {
 
   return (
     <header className="sticky top-0 z-30 h-14 shrink-0 border-b border-gray-200 dark:border-gray-800 bg-white/90 dark:bg-gray-900/90 backdrop-blur px-4 flex items-center justify-end gap-2">
-      <RoleGuard allowedRoles={['SUPER_ADMIN', 'WORKSPACE_OWNER']}>
+      <RoleGuard permission="users.manage">
         <Link
           href="/admin/users"
           className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
@@ -48,7 +49,16 @@ export function AppHeader() {
           Users
         </Link>
       </RoleGuard>
-      <RoleGuard allowedRoles={['SUPER_ADMIN']}>
+      <RoleGuard permission="permissions.manage">
+        <Link
+          href="/admin/permissions"
+          className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+        >
+          <Shield className="h-4 w-4" />
+          Permissions
+        </Link>
+      </RoleGuard>
+      <RoleGuard permission="invoices.manage">
         <Link
           href="/admin/invoices"
           className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
@@ -56,6 +66,8 @@ export function AppHeader() {
           <FileText className="h-4 w-4" />
           All invoices
         </Link>
+      </RoleGuard>
+      <RoleGuard permission="settings.manage">
         <Link
           href="/admin/integrations"
           className="hidden lg:inline-flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
@@ -64,7 +76,7 @@ export function AppHeader() {
           Integrations
         </Link>
       </RoleGuard>
-      <RoleGuard allowedRoles={['SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER']}>
+      <RoleGuard permission="contracts.manage">
         <Link
           href="/admin/contracts"
           className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"

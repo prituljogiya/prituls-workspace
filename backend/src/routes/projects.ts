@@ -1,8 +1,9 @@
 import express from 'express';
 import { body, validationResult } from 'express-validator';
-import { authenticate, AuthRequest, authorize } from '../middleware/auth';
+import { authenticate, AuthRequest, authorizePermission } from '../middleware/auth';
 import { prisma } from '../utils/prisma';
 import { githubRepoDisplay, parseGithubRepo } from '../utils/github';
+import { getEffectiveRole, roleHasPermission } from '../permissions/matrix';
 
 const router = express.Router();
 
@@ -209,6 +210,62 @@ router.get('/:id/github/pulls', authenticate, async (req: AuthRequest, res) => {
   }
 });
 
+// Project activity timeline
+router.get('/:id/timeline', authenticate, async (req: AuthRequest, res) => {
+  try {
+    const project = await assertProjectAccess(req.params.id, req.userId!, req.user?.role);
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found or access denied' });
+    }
+
+    const role = await getEffectiveRole(req.userId!, req.user?.role, req.params.id);
+    if (!(await roleHasPermission(role, 'timeline.view'))) {
+      return res.status(403).json({ error: 'Insufficient permissions' });
+    }
+
+    const take = Math.min(parseInt(String(req.query.limit || '80'), 10) || 80, 200);
+    const activities = await prisma.taskActivity.findMany({
+      where: { task: { projectId: req.params.id } },
+      include: {
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            avatar: true,
+          },
+        },
+        task: {
+          select: {
+            id: true,
+            title: true,
+            status: true,
+            issueType: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      take,
+    });
+
+    res.json({
+      activities: activities.map((item) => ({
+        id: item.id,
+        action: item.action,
+        oldValue: item.oldValue,
+        newValue: item.newValue,
+        createdAt: item.createdAt,
+        user: item.user,
+        task: item.task,
+      })),
+    });
+  } catch (error) {
+    console.error('Get project timeline error:', error);
+    res.status(500).json({ error: 'Failed to load timeline' });
+  }
+});
+
 // Get project by ID
 router.get('/:id', authenticate, async (req: AuthRequest, res) => {
   try {
@@ -262,7 +319,8 @@ router.get('/:id', authenticate, async (req: AuthRequest, res) => {
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    res.json({ project });
+    const myRole = await getEffectiveRole(req.userId!, req.user?.role, project.id);
+    res.json({ project, myRole });
   } catch (error) {
     console.error('Get project error:', error);
     res.status(500).json({ error: 'Failed to get project' });
@@ -273,6 +331,7 @@ router.get('/:id', authenticate, async (req: AuthRequest, res) => {
 router.post(
   '/',
   authenticate,
+  authorizePermission('projects.create'),
   [body('name').trim().notEmpty(), body('workspaceId').notEmpty()],
   async (req: AuthRequest, res) => {
     try {
@@ -335,7 +394,7 @@ router.post(
 router.patch(
   '/:id',
   authenticate,
-  authorize('SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER'),
+  authorizePermission('projects.manage', (req) => req.params.id),
   async (req: AuthRequest, res) => {
     try {
       const { name, description, color, githubRepo, invoicesEnabled } = req.body;
@@ -385,7 +444,7 @@ router.patch(
 router.patch(
   '/:id/archive',
   authenticate,
-  authorize('SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER'),
+  authorizePermission('projects.manage', (req) => req.params.id),
   async (req: AuthRequest, res) => {
     try {
       const project = await prisma.project.update({
@@ -407,7 +466,7 @@ router.patch(
 router.post(
   '/:id/members',
   authenticate,
-  authorize('SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER'),
+  authorizePermission('members.manage', (req) => req.params.id),
   [body('userId').notEmpty(), body('role').notEmpty()],
   async (req: AuthRequest, res) => {
     try {
@@ -449,7 +508,7 @@ router.post(
 router.delete(
   '/:id/members/:memberId',
   authenticate,
-  authorize('SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER'),
+  authorizePermission('members.manage', (req) => req.params.id),
   async (req: AuthRequest, res) => {
     try {
       await prisma.projectMember.delete({
@@ -460,6 +519,50 @@ router.delete(
     } catch (error) {
       console.error('Remove member error:', error);
       res.status(500).json({ error: 'Failed to remove member' });
+    }
+  }
+);
+
+// Update project member role
+router.patch(
+  '/:id/members/:memberId',
+  authenticate,
+  authorizePermission('members.manage', (req) => req.params.id),
+  [body('role').notEmpty()],
+  async (req: AuthRequest, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const existing = await prisma.projectMember.findUnique({
+        where: { id: req.params.memberId },
+      });
+      if (!existing || existing.projectId !== req.params.id) {
+        return res.status(404).json({ error: 'Member not found' });
+      }
+
+      const member = await prisma.projectMember.update({
+        where: { id: req.params.memberId },
+        data: { role: req.body.role },
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+              avatar: true,
+            },
+          },
+        },
+      });
+
+      res.json({ member });
+    } catch (error) {
+      console.error('Update member role error:', error);
+      res.status(500).json({ error: 'Failed to update member role' });
     }
   }
 );

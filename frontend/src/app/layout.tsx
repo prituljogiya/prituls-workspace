@@ -4,6 +4,7 @@ import './globals.css'
 import { AuthProvider } from '@/contexts/AuthContext'
 import { ThemeProvider } from '@/contexts/ThemeContext'
 import { TimerProvider } from '@/contexts/TimerContext'
+import { PermissionProvider } from '@/contexts/PermissionContext'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -22,7 +23,9 @@ export default function RootLayout({
       <body className={inter.className}>
         <ThemeProvider>
           <AuthProvider>
-            <TimerProvider>{children}</TimerProvider>
+            <PermissionProvider>
+              <TimerProvider>{children}</TimerProvider>
+            </PermissionProvider>
           </AuthProvider>
         </ThemeProvider>
       </body>

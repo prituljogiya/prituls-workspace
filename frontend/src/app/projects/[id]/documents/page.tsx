@@ -8,7 +8,7 @@ import api from '@/lib/api';
 import { Layout } from '@/components/Layout';
 import { ArrowLeft, Plus, BookOpen, Trash2, FileText } from 'lucide-react';
 import { format } from 'date-fns';
-import { canManageDocuments } from '@/utils/rbac';
+import { usePermissions } from '@/contexts/PermissionContext';
 
 type DocSummary = {
   id: string;
@@ -23,6 +23,7 @@ export default function DocumentsPage() {
   const params = useParams();
   const projectId = Array.isArray(params.id) ? params.id[0] : params.id;
   const { user, loading: authLoading } = useAuth();
+  const { can } = usePermissions();
   const [documents, setDocuments] = useState<DocSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
@@ -88,7 +89,8 @@ export default function DocumentsPage() {
     );
   }
 
-  const canEdit = user?.role ? canManageDocuments(user.role) : false;
+  const canCreate = can('documents.create');
+  const canDelete = can('documents.delete');
 
   return (
     <Layout projectId={projectId}>
@@ -110,10 +112,11 @@ export default function DocumentsPage() {
                   </h1>
                   <p className="text-sm text-gray-500 dark:text-gray-400">
                     Rich docs like Google Docs — headings, lists, links, images, autosave
+                    {!canCreate && !canDelete ? ' · view only' : ''}
                   </p>
                 </div>
               </div>
-              {canEdit && (
+              {canCreate && (
                 <button
                   type="button"
                   onClick={() => setShowCreate(true)}
@@ -133,7 +136,7 @@ export default function DocumentsPage() {
               <FileText className="h-12 w-12 mx-auto mb-3 opacity-40" />
               <p className="text-lg font-medium text-gray-700 dark:text-gray-300">No documents yet</p>
               <p className="mt-1 text-sm">Create a README, runbook, or product brief.</p>
-              {canEdit && (
+              {canCreate && (
                 <button
                   type="button"
                   onClick={() => setShowCreate(true)}
@@ -159,7 +162,7 @@ export default function DocumentsPage() {
                         ` · ${doc.creator.firstName} ${doc.creator.lastName}`.trim()}
                     </p>
                   </Link>
-                  {canEdit && (
+                  {canDelete && (
                     <button
                       type="button"
                       onClick={() => deleteDocument(doc.id, doc.title)}

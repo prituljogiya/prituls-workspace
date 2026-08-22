@@ -6,6 +6,7 @@ import { prisma } from '../utils/prisma';
 import { generateToken } from '../utils/jwt';
 import { sendPasswordResetEmail } from '../utils/email';
 import { authenticate, AuthRequest } from '../middleware/auth';
+import { getGrantsForRole } from '../permissions/matrix';
 
 const router = express.Router();
 
@@ -154,7 +155,8 @@ router.get('/me', authenticate, async (req: AuthRequest, res) => {
       },
     });
 
-    res.json({ user });
+    const permissions = await getGrantsForRole(user?.role);
+    res.json({ user, permissions });
   } catch (error) {
     console.error('Get user error:', error);
     res.status(500).json({ error: 'Failed to get user' });

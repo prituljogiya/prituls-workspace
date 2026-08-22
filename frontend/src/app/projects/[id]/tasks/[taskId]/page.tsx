@@ -802,39 +802,45 @@ export default function TaskDetailPage() {
                 </div>
               </div>
 
-              {/* Activity Log - Jira Style */}
-              {task.activities && task.activities.length > 0 && (
-                <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded">
+              {/* Activity Log / Timeline */}
+              <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded">
                   <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
                     <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide flex items-center gap-2">
                       <Clock className="h-4 w-4" />
-                      Activity
+                      Timeline
                     </h2>
                   </div>
                   <div className="p-4 space-y-3">
-                    {task.activities.map((activity: any) => (
+                    {(!task.activities || task.activities.length === 0) && (
+                      <p className="text-sm text-gray-500 dark:text-gray-400">No activity yet.</p>
+                    )}
+                    {(task.activities || []).map((activity: any) => {
+                      const first = activity.user?.firstName || '';
+                      const last = activity.user?.lastName || '';
+                      const name = `${first} ${last}`.trim() || activity.user?.email || 'Someone';
+                      return (
                       <div key={activity.id} className="flex gap-3">
                         <div className="w-6 h-6 rounded-full bg-gray-300 dark:bg-gray-600 flex items-center justify-center text-xs text-gray-600 dark:text-gray-400 flex-shrink-0">
-                          {activity.user.firstName[0]}{activity.user.lastName[0]}
+                          {(first[0] || '') + (last[0] || '') || '?'}
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm text-gray-700 dark:text-gray-300">
-                            <span className="font-medium">{activity.user.firstName} {activity.user.lastName}</span>
+                            <span className="font-medium">{name}</span>
                             {' '}
-                            <span className="text-gray-600 dark:text-gray-400">{activity.action.replace('_', ' ')}</span>
+                            <span className="text-gray-600 dark:text-gray-400">{(activity.action || '').replace('_', ' ')}</span>
                             {activity.newValue && (
                               <span className="text-gray-500 dark:text-gray-400">: {activity.newValue}</span>
                             )}
                           </p>
                           <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
-                            {format(new Date(activity.createdAt), 'MMM d, yyyy h:mm a')}
+                            {activity.createdAt ? format(new Date(activity.createdAt), 'MMM d, yyyy h:mm a') : ''}
                           </p>
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
-              )}
           </div>
 
             {/* Sidebar - Jira Style */}

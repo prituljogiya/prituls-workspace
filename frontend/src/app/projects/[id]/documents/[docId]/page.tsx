@@ -9,7 +9,7 @@ import { Layout } from '@/components/Layout';
 import { DocumentEditor } from '@/components/DocumentEditor';
 import { ArrowLeft, Save, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
-import { canManageDocuments } from '@/utils/rbac';
+import { usePermissions } from '@/contexts/PermissionContext';
 
 export default function DocumentDetailPage() {
   const router = useRouter();
@@ -17,6 +17,7 @@ export default function DocumentDetailPage() {
   const projectId = Array.isArray(params.id) ? params.id[0] : params.id;
   const documentId = Array.isArray(params.docId) ? params.docId[0] : params.docId;
   const { user, loading: authLoading } = useAuth();
+  const { can } = usePermissions();
 
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
@@ -30,7 +31,8 @@ export default function DocumentDetailPage() {
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestRef = useRef({ title: '', content: '' });
 
-  const canEdit = user?.role ? canManageDocuments(user.role) : false;
+  const canEdit = can('documents.edit');
+  const canDelete = can('documents.delete');
 
   useEffect(() => {
     latestRef.current = { title, content };
@@ -110,6 +112,7 @@ export default function DocumentDetailPage() {
   }, [save]);
 
   const remove = async () => {
+    if (!canDelete) return;
     if (!confirm(`Delete “${title}”?`)) return;
     try {
       await api.delete(`/documents/${documentId}`);
@@ -178,6 +181,9 @@ export default function DocumentDetailPage() {
                     <Save className="h-4 w-4" />
                     {saving ? 'Saving…' : 'Save'}
                   </button>
+                </>
+              )}
+              {canDelete && (
                   <button
                     type="button"
                     onClick={remove}
@@ -186,7 +192,6 @@ export default function DocumentDetailPage() {
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>
-                </>
               )}
             </div>
           </div>

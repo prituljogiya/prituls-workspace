@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { prisma } from '../utils/prisma';
+import { getEffectiveRole, roleHasPermission } from '../permissions/matrix';
 
 export interface AuthRequest extends Request {
   userId?: string;
@@ -106,6 +107,32 @@ export const authorize = (...rolesOrArray: (string | string[])[]) => {
       return res.status(403).json({ error: 'Insufficient permissions' });
     }
 
+    next();
+  };
+};
+
+type ProjectIdResolver = (req: AuthRequest) => string | undefined;
+
+/** Check a catalog permission, using project membership role when a project id is known. */
+export const authorizePermission = (
+  permission: string,
+  projectIdFrom?: ProjectIdResolver
+) => {
+  return async (req: AuthRequest, res: Response, next: NextFunction) => {
+    if (!req.user || !req.userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const projectId =
+      projectIdFrom?.(req) ||
+      (typeof req.body?.projectId === 'string' ? req.body.projectId : undefined) ||
+      (typeof req.params?.projectId === 'string' ? req.params.projectId : undefined);
+
+    const role = await getEffectiveRole(req.userId, req.user.role, projectId);
+    const allowed = await roleHasPermission(role, permission);
+    if (!allowed) {
+      return res.status(403).json({ error: 'Insufficient permissions' });
+    }
     next();
   };
 };

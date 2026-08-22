@@ -6,12 +6,14 @@ import { useAuth } from '@/contexts/AuthContext';
 import api from '@/lib/api';
 import { Layout } from '@/components/Layout';
 import { RoleGuard } from '@/components/RoleGuard';
+import { usePermissions } from '@/contexts/PermissionContext';
 import { X, UserPlus } from 'lucide-react';
 
 export default function MembersPage() {
   const router = useRouter();
   const params = useParams();
   const { user, loading: authLoading } = useAuth();
+  const { can } = usePermissions();
   const [project, setProject] = useState<any>(null);
   const [allUsers, setAllUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -101,7 +103,7 @@ export default function MembersPage() {
                   <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{project.name}</p>
                 )}
               </div>
-              <RoleGuard allowedRoles={['SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER']}>
+              <RoleGuard permission="members.manage">
                 <button
                   type="button"
                   onClick={() => setShowAddModal(true)}
@@ -143,7 +145,7 @@ export default function MembersPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-3 shrink-0">
-                      <RoleGuard allowedRoles={['SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER']}>
+                      <RoleGuard permission="members.manage">
                         <select
                           value={member.role}
                           onChange={async (e) => {
@@ -171,9 +173,7 @@ export default function MembersPage() {
                           <X className="h-5 w-5" />
                         </button>
                       </RoleGuard>
-                      {!['SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER'].includes(
-                        user?.role || ''
-                      ) && (
+                      {!can('members.manage') && (
                         <span className="text-sm text-gray-600 dark:text-gray-300 px-2 py-1 rounded bg-gray-100 dark:bg-gray-700">
                           {member.role?.replace(/_/g, ' ')}
                         </span>

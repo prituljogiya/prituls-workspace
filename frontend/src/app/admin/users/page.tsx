@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
+import { usePermissions } from '@/contexts/PermissionContext';
 import api from '@/lib/api';
 import { Layout } from '@/components/Layout';
 import { RoleGuard } from '@/components/RoleGuard';
@@ -17,6 +18,7 @@ const cancelClass =
 export default function UsersPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
+  const { can } = usePermissions();
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -36,14 +38,14 @@ export default function UsersPage() {
       router.push('/login');
       return;
     }
-    if (user && !['SUPER_ADMIN', 'WORKSPACE_OWNER'].includes(user.role)) {
+    if (user && !can('users.manage')) {
       router.push('/dashboard');
       return;
     }
     if (user) {
       fetchUsers();
     }
-  }, [user, authLoading, router]);
+  }, [user, authLoading, router, can]);
 
   const fetchUsers = async () => {
     try {
@@ -123,7 +125,7 @@ export default function UsersPage() {
           <div className="px-6 py-4">
             <div className="flex items-center justify-between">
               <h1 className="text-2xl font-bold text-gray-900 dark:text-white">User Management</h1>
-              <RoleGuard allowedRoles={['SUPER_ADMIN', 'WORKSPACE_OWNER']}>
+              <RoleGuard permission="users.manage">
                 <button
                   type="button"
                   onClick={() => setShowCreateModal(true)}

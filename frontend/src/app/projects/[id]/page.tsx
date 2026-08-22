@@ -6,7 +6,8 @@ import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import api from '@/lib/api';
 import { Layout } from '@/components/Layout';
-import { ArrowLeft, Settings, Users, Plus } from 'lucide-react';
+import { RoleGuard } from '@/components/RoleGuard';
+import { Settings, Users, Plus, History } from 'lucide-react';
 
 export default function ProjectPage() {
   const router = useRouter();
@@ -59,7 +60,17 @@ export default function ProjectPage() {
                 <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{project.name}</h1>
                 <p className="text-sm text-gray-600 dark:text-gray-400">{project.description || 'No description'}</p>
               </div>
-              <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2">
+              <RoleGuard permission="timeline.view">
+                <Link
+                  href={`/projects/${params.id}/timeline`}
+                  className="flex items-center gap-2 px-4 py-2 text-sm text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white"
+                >
+                  <History className="h-4 w-4" />
+                  Timeline
+                </Link>
+              </RoleGuard>
+              <RoleGuard permission="members.manage">
                 <Link
                   href={`/projects/${params.id}/members`}
                   className="flex items-center gap-2 px-4 py-2 text-sm text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white"
@@ -67,6 +78,8 @@ export default function ProjectPage() {
                   <Users className="h-4 w-4" />
                   {project.members.length} Members
                 </Link>
+              </RoleGuard>
+                <RoleGuard permission="projects.manage">
                 <Link
                   href={`/projects/${params.id}/settings`}
                   className="flex items-center gap-2 px-4 py-2 text-sm text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white"
@@ -74,6 +87,7 @@ export default function ProjectPage() {
                   <Settings className="h-4 w-4" />
                   Settings
                 </Link>
+                </RoleGuard>
               </div>
             </div>
           </div>
@@ -81,7 +95,7 @@ export default function ProjectPage() {
 
         <main className="p-6">
         {/* Quick Actions */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
           <Link
             href={`/projects/${params.id}/boards`}
             className="flex items-center justify-center gap-2 px-4 py-3 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
@@ -102,11 +116,20 @@ export default function ProjectPage() {
             Sprints
           </Link>
           <Link
-            href={`/projects/${params.id}/reports`}
-            className="flex items-center justify-center gap-2 px-4 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+            href={`/projects/${params.id}/timeline`}
+            className="flex items-center justify-center gap-2 px-4 py-3 bg-amber-600 text-white rounded-lg hover:bg-amber-700"
           >
-            Reports
+            <History className="h-4 w-4" />
+            Timeline
           </Link>
+          <RoleGuard permission="reports.view">
+            <Link
+              href={`/projects/${params.id}/reports`}
+              className="flex items-center justify-center gap-2 px-4 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+            >
+              Reports
+            </Link>
+          </RoleGuard>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

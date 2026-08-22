@@ -3,7 +3,7 @@ import { body, validationResult } from 'express-validator';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
-import { authenticate, AuthRequest, authorize } from '../middleware/auth';
+import { authenticate, AuthRequest, authorizePermission } from '../middleware/auth';
 import { prisma } from '../utils/prisma';
 
 const router = express.Router();
@@ -219,6 +219,7 @@ router.get('/:id', authenticate, async (req: AuthRequest, res) => {
 router.post(
   '/',
   authenticate,
+  authorizePermission('tasks.create'),
   [body('title').trim().notEmpty(), body('projectId').notEmpty()],
   async (req: AuthRequest, res) => {
     try {
@@ -422,7 +423,7 @@ router.patch(
 router.delete(
   '/:id',
   authenticate,
-  authorize('SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER'),
+  authorizePermission('tasks.delete'),
   async (req: AuthRequest, res) => {
     try {
       await prisma.task.delete({

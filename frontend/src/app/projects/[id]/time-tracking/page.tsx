@@ -7,12 +7,13 @@ import api from '@/lib/api';
 import { Layout } from '@/components/Layout';
 import { Clock, Play, Square, Plus, TrendingUp, Pencil, Trash2, X, Check, Send } from 'lucide-react';
 import { format } from 'date-fns';
-import { canApproveTimeDeletion, canHardDeleteTime, canUseTimeTracking } from '@/utils/rbac';
+import { usePermissions } from '@/contexts/PermissionContext';
 
 export default function TimeTrackingPage() {
   const router = useRouter();
   const params = useParams();
   const { user, loading: authLoading } = useAuth();
+  const { can } = usePermissions();
   const [entries, setEntries] = useState<any[]>([]);
   const [summary, setSummary] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -31,9 +32,9 @@ export default function TimeTrackingPage() {
   const [deletionRequests, setDeletionRequests] = useState<any[]>([]);
   const [pendingDeleteIds, setPendingDeleteIds] = useState<Set<string>>(new Set());
 
-  const canHours = user?.role ? canUseTimeTracking(user.role) : false;
-  const canApprove = user?.role ? canApproveTimeDeletion(user.role) : false;
-  const canHardDelete = user?.role ? canHardDeleteTime(user.role) : false;
+  const canHours = can('time.view') || can('time.track');
+  const canApprove = can('time.approve');
+  const canHardDelete = can('time.approve');
 
   useEffect(() => {
     if (!authLoading && !user) {

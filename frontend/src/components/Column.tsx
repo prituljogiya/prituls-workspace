@@ -6,8 +6,7 @@ import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { TaskCard } from './TaskCard';
 import { Plus, MoreVertical } from 'lucide-react';
 import { useState } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
-import { canCreateTask } from '@/utils/rbac';
+import { usePermissions } from '@/contexts/PermissionContext';
 
 interface ColumnProps {
   column: any;
@@ -16,7 +15,7 @@ interface ColumnProps {
 }
 
 export function Column({ column, tasks, onCreateTask }: ColumnProps) {
-  const { user } = useAuth();
+  const { can } = usePermissions();
   const {
     attributes,
     listeners,
@@ -34,7 +33,7 @@ export function Column({ column, tasks, onCreateTask }: ColumnProps) {
 
   const [showAddTask, setShowAddTask] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState('');
-  const canAddTask = user && canCreateTask(user.role);
+  const canAddTask = can('tasks.create');
 
   const handleCreateTask = () => {
     if (newTaskTitle.trim()) {

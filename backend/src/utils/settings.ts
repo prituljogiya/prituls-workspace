@@ -2,6 +2,7 @@ import { prisma } from './prisma';
 
 export const SETTING_KEYS = {
   GITHUB_TOKEN: 'github_token',
+  ROLE_PERMISSIONS: 'role_permissions',
 } as const;
 
 export async function getSetting(key: string): Promise<string | null> {
