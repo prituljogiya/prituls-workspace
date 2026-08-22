@@ -9,6 +9,7 @@ import { Layout } from '@/components/Layout';
 import { FileText, Plus, Download, DollarSign, Calendar, XCircle, Landmark, Settings, Trash2, CreditCard } from 'lucide-react';
 import { format } from 'date-fns';
 import { RoleGuard } from '@/components/RoleGuard';
+import { PageHeader, PageSpinner } from '@/components/PageHeader';
 import { currentBillingMonth, formatBillingMonthLabel } from '@/utils/billingMonth';
 
 const emptyItem = { description: '', quantity: '1', unitPrice: '0', taxRate: '0' };
@@ -372,59 +373,46 @@ export default function InvoicesPage() {
   if (loading || authLoading) {
     return (
       <Layout projectId={params.id as string}>
-        <div className="flex items-center justify-center min-h-screen">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-        </div>
+        <PageSpinner />
       </Layout>
     );
   }
 
   return (
     <Layout projectId={params.id as string}>
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-        <div className="max-w-7xl mx-auto px-6 py-6">
-          {/* Header */}
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h1 className="text-2xl font-semibold text-gray-900 dark:text-white mb-2">Invoices</h1>
-              <p className="text-sm text-gray-600 dark:text-gray-400">
-                Create and manage project invoices
-                {workspaceName ? ` for ${workspaceName}` : ''}
-              </p>
+      <PageHeader
+        title="Invoices"
+        subtitle={`Create and manage project invoices${workspaceName ? ` for ${workspaceName}` : ''}`}
+        actions={
+          <RoleGuard allowedRoles={['SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER']}>
+            <div className="flex gap-2 flex-wrap justify-end">
+              {workspaceId && (
+                <RoleGuard allowedRoles={['SUPER_ADMIN', 'WORKSPACE_OWNER']}>
+                  <Link href={`/workspaces/${workspaceId}/settings`} className="ui-btn-secondary">
+                    <Settings className="h-4 w-4" />
+                    Bank details
+                  </Link>
+                </RoleGuard>
+              )}
+              <button
+                onClick={() => {
+                  fetchTimeEntries();
+                  setShowTimeEntryModal(true);
+                }}
+                className="ui-btn-secondary"
+              >
+                <DollarSign className="h-4 w-4" />
+                From time
+              </button>
+              <button onClick={openCreateModal} className="ui-btn-primary">
+                <Plus className="h-4 w-4" />
+                Manual invoice
+              </button>
             </div>
-            <RoleGuard allowedRoles={['SUPER_ADMIN', 'WORKSPACE_OWNER', 'PROJECT_MANAGER']}>
-              <div className="flex gap-3 flex-wrap justify-end">
-                {workspaceId && (
-                  <RoleGuard allowedRoles={['SUPER_ADMIN', 'WORKSPACE_OWNER']}>
-                    <Link
-                      href={`/workspaces/${workspaceId}/settings`}
-                      className="px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2 text-sm font-medium"
-                    >
-                      <Settings className="h-4 w-4" />
-                      Workspace Bank Details
-                    </Link>
-                  </RoleGuard>
-                )}
-                <button
-                  onClick={() => {
-                    fetchTimeEntries();
-                    setShowTimeEntryModal(true);
-                  }}
-                  className="px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2 text-sm font-medium"
-                >
-                  <DollarSign className="h-4 w-4" />
-                  From Time Entries
-                </button>
-                <button
-                  onClick={openCreateModal}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 text-sm font-medium"
-                >
-                  <Plus className="h-4 w-4" />
-                  Manual Invoice
-                </button>
-              </div>
-            </RoleGuard>
-          </div>
+          </RoleGuard>
+        }
+      />
+      <div className="px-4 sm:px-6 pb-8 max-w-7xl">
 
           {/* Invoices List */}
           {accessError ? (
@@ -606,7 +594,6 @@ export default function InvoicesPage() {
             </div>
           </div>
           )}
-        </div>
 
         {/* Create Invoice Modal */}
         {showCreateModal && (

@@ -193,14 +193,14 @@ export function BoardView({ boardId, projectId }: BoardViewProps) {
   const activeTask = activeId ? tasks.find(t => t.id === activeId) : null;
 
   return (
-    <div className="h-full bg-gray-50 dark:bg-gray-900">
+    <div className="h-full">
       <DndContext
         sensors={sensors}
         collisionDetection={closestCorners}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
       >
-        <div className="flex gap-3 overflow-x-auto pb-4 h-full px-4">
+        <div className="flex gap-3 overflow-x-auto ui-scroll pb-2 h-full items-start">
           <SortableContext
             items={columns.map(c => c.id)}
             strategy={horizontalListSortingStrategy}
@@ -218,18 +218,17 @@ export function BoardView({ boardId, projectId }: BoardViewProps) {
             })}
           </SortableContext>
 
-          {/* Add Column Button */}
           {canManageBoard && (
-          <div className="min-w-[280px] flex-shrink-0">
+          <div className="min-w-[280px] w-[280px] flex-shrink-0">
             <button
               onClick={() => {
                 const name = prompt('Column name:');
                 if (name) createColumn(name);
               }}
-              className="w-full h-12 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg hover:border-blue-500 dark:hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/10 flex items-center justify-center gap-2 text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors bg-white dark:bg-gray-800"
+              className="w-full h-11 border border-dashed border-gray-300 dark:border-gray-600 rounded-xl hover:border-primary-500 hover:bg-primary-50/60 dark:hover:bg-primary-900/10 flex items-center justify-center gap-2 text-gray-500 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors bg-white/60 dark:bg-gray-800/40"
             >
               <Plus className="h-4 w-4" />
-              <span className="text-sm font-medium">Add Column</span>
+              <span className="text-sm font-medium">Add column</span>
             </button>
           </div>
           )}

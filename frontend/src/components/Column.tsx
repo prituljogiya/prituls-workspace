@@ -47,30 +47,37 @@ export function Column({ column, tasks, onCreateTask }: ColumnProps) {
     <div
       ref={setNodeRef}
       style={style}
-      className="min-w-[280px] flex-shrink-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg flex flex-col h-full"
+      className="min-w-[280px] w-[280px] flex-shrink-0 bg-gray-100/90 dark:bg-gray-800/70 rounded-xl flex flex-col max-h-full border border-gray-200/70 dark:border-gray-700/70"
     >
+      <div
+        className="h-1 rounded-t-xl shrink-0"
+        style={{ backgroundColor: column.color || '#94a3b8' }}
+      />
       <div
         {...attributes}
         {...listeners}
-        className="px-3 py-2.5 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between cursor-grab active:cursor-grabbing"
+        className="px-3 py-2.5 flex items-center justify-between cursor-grab active:cursor-grabbing"
       >
-        <div className="flex items-center gap-2">
-          <h3 className="font-semibold text-sm text-gray-700 dark:text-gray-300 uppercase tracking-wide">{column.name}</h3>
-          <span className="text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded">
+        <div className="flex items-center gap-2 min-w-0">
+          <h3 className="font-semibold text-sm text-gray-700 dark:text-gray-200 truncate">{column.name}</h3>
+          <span className="text-xs text-gray-500 dark:text-gray-400 bg-white/80 dark:bg-gray-900/50 px-1.5 py-0.5 rounded-full">
             {tasks.length}
           </span>
         </div>
-        <button className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors">
+        <button className="p-1 hover:bg-gray-200/70 dark:hover:bg-gray-700 rounded transition-colors">
           <MoreVertical className="h-4 w-4 text-gray-400 dark:text-gray-500" />
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto space-y-2 p-2 min-h-[200px]">
+      <div className="flex-1 overflow-y-auto ui-scroll space-y-2 p-2 min-h-[120px]">
         <SortableContext items={tasks.map(t => t.id)} strategy={verticalListSortingStrategy}>
           {tasks.map((task) => (
             <TaskCard key={task.id} task={task} />
           ))}
         </SortableContext>
+        {tasks.length === 0 && (
+          <p className="text-xs text-center text-gray-400 dark:text-gray-500 py-6">No tasks</p>
+        )}
       </div>
 
       {showAddTask ? (

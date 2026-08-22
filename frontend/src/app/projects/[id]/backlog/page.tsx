@@ -7,7 +7,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import api from '@/lib/api';
 import { Layout } from '@/components/Layout';
 import { RoleGuard } from '@/components/RoleGuard';
-import { ArrowLeft, Plus, Filter, MoveRight, User, Calendar, Tag } from 'lucide-react';
+import { PageHeader, PageSpinner } from '@/components/PageHeader';
+import { Plus, Filter, MoveRight, User, Calendar, Tag } from 'lucide-react';
 
 export default function BacklogPage() {
   const router = useRouter();
@@ -104,52 +105,39 @@ export default function BacklogPage() {
   if (loading || authLoading) {
     return (
       <Layout projectId={params.id as string}>
-        <div className="flex items-center justify-center min-h-screen">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
-        </div>
+        <PageSpinner />
       </Layout>
     );
   }
 
   return (
     <Layout projectId={params.id as string}>
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-        <header className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700 sticky top-0 z-10">
-          <div className="px-6 py-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Backlog</h1>
-                <p className="text-sm text-gray-600 dark:text-gray-400">{filteredTasks.length} tasks</p>
-              </div>
-              <RoleGuard permission="tasks.create">
-                <div className="flex items-center gap-2">
-                  {selectedTasks.length > 0 && (
-                    <RoleGuard permission="sprints.assign">
-                      <button
-                        onClick={() => setShowMoveModal(true)}
-                        className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
-                      >
-                        <MoveRight className="h-4 w-4" />
-                        Move to Sprint ({selectedTasks.length})
-                      </button>
-                    </RoleGuard>
-                  )}
-                  <button
-                    onClick={createTask}
-                    className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
-                  >
-                    <Plus className="h-4 w-4" />
-                    Add Task
+      <PageHeader
+        title="Backlog"
+        subtitle={`${filteredTasks.length} task${filteredTasks.length === 1 ? '' : 's'}`}
+        actions={
+          <RoleGuard permission="tasks.create">
+            <div className="flex items-center gap-2">
+              {selectedTasks.length > 0 && (
+                <RoleGuard permission="sprints.assign">
+                  <button onClick={() => setShowMoveModal(true)} className="ui-btn-primary">
+                    <MoveRight className="h-4 w-4" />
+                    Move to Sprint ({selectedTasks.length})
                   </button>
-                </div>
-              </RoleGuard>
+                </RoleGuard>
+              )}
+              <button onClick={createTask} className="ui-btn-primary">
+                <Plus className="h-4 w-4" />
+                Add Task
+              </button>
             </div>
-          </div>
-        </header>
+          </RoleGuard>
+        }
+      />
 
-        <main className="p-6">
+      <main className="px-4 sm:px-6 pb-8">
           {/* Filters */}
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 mb-6">
+          <div className="ui-card p-4 mb-6">
           <div className="flex items-center gap-4">
             <Filter className="h-5 w-5 text-gray-500" />
             <select
@@ -308,7 +296,6 @@ export default function BacklogPage() {
           </div>
         </div>
       )}
-      </div>
     </Layout>
   );
 }

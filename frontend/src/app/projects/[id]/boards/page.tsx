@@ -8,6 +8,7 @@ import api from '@/lib/api';
 import { Layout } from '@/components/Layout';
 import { RoleGuard } from '@/components/RoleGuard';
 import { BoardSwitcher } from '@/components/BoardSwitcher';
+import { PageHeader, PageSpinner, EmptyState } from '@/components/PageHeader';
 import { Plus, Trash2, Search, Columns3, LayoutDashboard } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -83,71 +84,58 @@ export default function BoardsPage() {
   if (loading || authLoading) {
     return (
       <Layout projectId={params.id as string}>
-        <div className="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-900">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600" />
-        </div>
+        <PageSpinner />
       </Layout>
     );
   }
 
   return (
     <Layout projectId={params.id as string}>
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-        <header className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700 sticky top-0 z-10">
-          <div className="px-6 py-4 space-y-3">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <div className="flex items-center gap-3 flex-wrap">
-                  <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Boards</h1>
-                  <BoardSwitcher projectId={params.id as string} />
-                </div>
-                <p className="text-sm text-gray-500 dark:text-gray-400">
-                  {boards.length} board{boards.length === 1 ? '' : 's'} · search and jump in
-                </p>
-              </div>
-              <RoleGuard permission="boards.create">
-                <button
-                  type="button"
-                  onClick={() => setShowCreateModal(true)}
-                  className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
-                >
-                  <Plus className="h-4 w-4" />
-                  New Board
-                </button>
-              </RoleGuard>
-            </div>
-            {boards.length > 0 && (
-              <div className="relative max-w-md">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Find a board by name…"
-                  className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                />
-              </div>
-            )}
+      <PageHeader
+        title={
+          <span className="inline-flex items-center gap-3">
+            Boards
+            <BoardSwitcher projectId={params.id as string} />
+          </span>
+        }
+        subtitle={`${boards.length} board${boards.length === 1 ? '' : 's'} · search and jump in`}
+        actions={
+          <RoleGuard permission="boards.create">
+            <button type="button" onClick={() => setShowCreateModal(true)} className="ui-btn-primary">
+              <Plus className="h-4 w-4" />
+              New Board
+            </button>
+          </RoleGuard>
+        }
+      >
+        {boards.length > 0 && (
+          <div className="relative max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Find a board by name…"
+              className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+            />
           </div>
-        </header>
+        )}
+      </PageHeader>
 
-        <main className="p-6">
+        <main className="px-4 sm:px-6 pb-8">
           {boards.length === 0 ? (
-            <div className="text-center py-12">
-              <LayoutDashboard className="h-12 w-12 mx-auto mb-3 text-gray-300 dark:text-gray-600" />
-              <p className="text-gray-600 dark:text-gray-400 mb-4">
-                No boards yet. Create your first board to get started!
-              </p>
-              <RoleGuard permission="boards.create">
-                <button
-                  type="button"
-                  onClick={() => setShowCreateModal(true)}
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
-                >
-                  <Plus className="h-4 w-4" />
-                  Create Board
-                </button>
-              </RoleGuard>
-            </div>
+            <EmptyState
+              icon={LayoutDashboard}
+              title="No boards yet"
+              description="Create your first board to start organizing tasks."
+              action={
+                <RoleGuard permission="boards.create">
+                  <button type="button" onClick={() => setShowCreateModal(true)} className="ui-btn-primary">
+                    <Plus className="h-4 w-4" />
+                    Create Board
+                  </button>
+                </RoleGuard>
+              }
+            />
           ) : filtered.length === 0 ? (
             <p className="text-sm text-gray-500 dark:text-gray-400">No boards match “{query}”.</p>
           ) : (
@@ -160,7 +148,7 @@ export default function BoardsPage() {
                 return (
                   <div
                     key={board.id}
-                    className="bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 hover:border-primary-400 dark:hover:border-primary-500 hover:shadow-lg transition-all p-5 relative group"
+                    className="ui-card hover:border-primary-400 dark:hover:border-primary-500 hover:shadow-md transition-all p-5 relative group"
                   >
                     <Link href={`/projects/${params.id}/boards/${board.id}`} className="block">
                       <div className="flex items-start gap-3">
@@ -207,7 +195,7 @@ export default function BoardsPage() {
 
         {showCreateModal && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-md border border-gray-200 dark:border-gray-700">
+            <div className="bg-white dark:bg-gray-800 rounded-xl p-6 w-full max-w-md border border-gray-200 dark:border-gray-700 shadow-xl">
               <h2 className="text-xl font-bold mb-4 text-gray-900 dark:text-white">Create New Board</h2>
               <div className="space-y-4">
                 <div>
@@ -235,12 +223,12 @@ export default function BoardsPage() {
                   />
                 </div>
               </div>
-              <div className="flex gap-4 mt-6">
+              <div className="flex gap-3 mt-6">
                 <button
                   type="button"
                   onClick={createBoard}
                   disabled={!newBoardName}
-                  className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
+                  className="flex-1 ui-btn-primary disabled:opacity-50"
                 >
                   Create
                 </button>
@@ -251,7 +239,7 @@ export default function BoardsPage() {
                     setNewBoardName('');
                     setNewBoardDesc('');
                   }}
-                  className="flex-1 px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600"
+                  className="flex-1 ui-btn-secondary"
                 >
                   Cancel
                 </button>
@@ -259,7 +247,6 @@ export default function BoardsPage() {
             </div>
           </div>
         )}
-      </div>
     </Layout>
   );
 }

@@ -4,6 +4,7 @@ import { Sidebar } from './Sidebar';
 import { AppHeader } from './AppHeader';
 import { usePathname } from 'next/navigation';
 import { useTimer } from '@/contexts/TimerContext';
+import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 
 interface LayoutProps {
@@ -50,12 +51,26 @@ function IdleTimerBanner() {
 
 export function Layout({ children, projectId }: LayoutProps) {
   const pathname = usePathname();
+  const [mobileNav, setMobileNav] = useState(false);
   const showSidebar =
     !pathname?.includes('/login') &&
     !pathname?.includes('/register') &&
     !pathname?.includes('/admin/login') &&
     !pathname?.includes('/forgot-password') &&
     !pathname?.includes('/reset-password');
+
+  useEffect(() => {
+    setMobileNav(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!mobileNav) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMobileNav(false);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [mobileNav]);
 
   if (!showSidebar) {
     return <>{children}</>;
@@ -64,10 +79,24 @@ export function Layout({ children, projectId }: LayoutProps) {
   const extractedProjectId = projectId || pathname?.match(/\/projects\/([^\/]+)/)?.[1];
 
   return (
-    <div className="flex h-screen overflow-hidden">
-      <Sidebar projectId={extractedProjectId} />
-      <div className="flex-1 overflow-y-auto bg-gray-50 dark:bg-gray-900 flex flex-col min-w-0">
-        <AppHeader />
+    <div className="flex h-screen overflow-hidden bg-gray-50 dark:bg-gray-950">
+      {mobileNav && (
+        <button
+          type="button"
+          className="fixed inset-0 z-40 bg-black/40 lg:hidden"
+          aria-label="Close menu"
+          onClick={() => setMobileNav(false)}
+        />
+      )}
+      <div
+        className={`fixed lg:static inset-y-0 left-0 z-50 transform transition-transform duration-200 ease-out ${
+          mobileNav ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+        }`}
+      >
+        <Sidebar projectId={extractedProjectId} onNavigate={() => setMobileNav(false)} />
+      </div>
+      <div className="flex-1 overflow-y-auto ui-scroll flex flex-col min-w-0">
+        <AppHeader onMenuClick={() => setMobileNav(true)} />
         <IdleTimerBanner />
         <div className="flex-1">{children}</div>
       </div>

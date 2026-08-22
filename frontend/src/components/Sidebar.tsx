@@ -45,9 +45,10 @@ interface SidebarProject {
 
 interface SidebarProps {
   projectId?: string;
+  onNavigate?: () => void;
 }
 
-export function Sidebar({ projectId }: SidebarProps) {
+export function Sidebar({ projectId, onNavigate }: SidebarProps) {
   const pathname = usePathname();
   const { user } = useAuth();
   const { can } = usePermissions();
@@ -277,21 +278,26 @@ export function Sidebar({ projectId }: SidebarProps) {
     : [];
 
   return (
-    <div className="h-screen w-64 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 flex flex-col">
+    <div className="h-screen w-[272px] bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 flex flex-col shadow-sm lg:shadow-none">
       {/* Logo/Brand */}
-      <div className="p-6 border-b border-gray-200 dark:border-gray-800">
-        <Link href="/dashboard" className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center">
+      <div className="h-14 px-4 border-b border-gray-200 dark:border-gray-800 flex items-center">
+        <Link href="/dashboard" onClick={onNavigate} className="flex items-center gap-2 min-w-0">
+          <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center shrink-0">
             <FolderKanban className="h-5 w-5 text-white" />
           </div>
-          <span className="font-bold text-lg text-gray-900 dark:text-white truncate">
+          <span className="font-semibold text-[15px] text-gray-900 dark:text-white truncate">
             Pritul&apos;s workspace
           </span>
         </Link>
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto p-4 space-y-1">
+      <nav
+        className="flex-1 overflow-y-auto ui-scroll p-3 space-y-0.5"
+        onClick={(e) => {
+          if ((e.target as HTMLElement).closest('a')) onNavigate?.();
+        }}
+      >
         <Link
           href="/dashboard"
           className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${

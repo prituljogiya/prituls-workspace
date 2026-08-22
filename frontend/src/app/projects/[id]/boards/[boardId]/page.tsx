@@ -7,6 +7,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Layout } from '@/components/Layout';
 import { BoardView } from '@/components/BoardView';
 import { BoardSwitcher } from '@/components/BoardSwitcher';
+import { PageHeader, PageSpinner } from '@/components/PageHeader';
 import api from '@/lib/api';
 import { ArrowLeft } from 'lucide-react';
 
@@ -41,43 +42,34 @@ export default function BoardDetailPage() {
   if (loading || authLoading) {
     return (
       <Layout projectId={params.id as string}>
-        <div className="flex items-center justify-center min-h-screen">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
-        </div>
+        <PageSpinner />
       </Layout>
     );
   }
 
   return (
     <Layout projectId={params.id as string}>
-      <div className="h-screen flex flex-col">
-        <header className="bg-white dark:bg-gray-800 shadow-sm border-b dark:border-gray-700 flex-shrink-0 sticky top-0 z-10">
-          <div className="px-6 py-4">
-            <div className="flex items-center justify-between gap-4">
-              <div className="min-w-0">
-                <div className="flex items-center gap-3">
-                  <Link
-                    href={`/projects/${params.id}/boards`}
-                    className="text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white"
-                    title="All boards"
-                  >
-                    <ArrowLeft className="h-5 w-5" />
-                  </Link>
-                  <BoardSwitcher
-                    projectId={params.id as string}
-                    currentBoardId={params.boardId as string}
-                    currentName={board?.name}
-                  />
-                </div>
-                {board?.description ? (
-                  <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 ml-8">{board.description}</p>
-                ) : null}
-              </div>
-            </div>
-          </div>
-        </header>
-
-        <main className="flex-1 overflow-hidden p-4">
+      <div className="h-[calc(100vh-3.5rem)] flex flex-col">
+        <PageHeader
+          title={
+            <span className="inline-flex items-center gap-3 min-w-0">
+              <Link
+                href={`/projects/${params.id}/boards`}
+                className="text-gray-400 hover:text-gray-800 dark:hover:text-white"
+                title="All boards"
+              >
+                <ArrowLeft className="h-5 w-5" />
+              </Link>
+              <BoardSwitcher
+                projectId={params.id as string}
+                currentBoardId={params.boardId as string}
+                currentName={board?.name}
+              />
+            </span>
+          }
+          subtitle={board?.description || undefined}
+        />
+        <main className="flex-1 overflow-hidden px-3 sm:px-4 pb-4">
           {board && (
             <BoardView boardId={params.boardId as string} projectId={params.id as string} />
           )}
@@ -86,4 +78,3 @@ export default function BoardDetailPage() {
     </Layout>
   );
 }
-

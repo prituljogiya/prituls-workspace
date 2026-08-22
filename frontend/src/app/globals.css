@@ -34,6 +34,39 @@ html.dark {
   .text-balance {
     text-wrap: balance;
   }
+
+  .ui-card {
+    @apply bg-white dark:bg-gray-800 rounded-xl border border-gray-200/80 dark:border-gray-700/80 shadow-sm;
+  }
+
+  .ui-btn {
+    @apply inline-flex items-center justify-center gap-2 px-3.5 py-2 text-sm font-medium rounded-lg transition-colors disabled:opacity-50 disabled:pointer-events-none;
+  }
+
+  .ui-btn-primary {
+    @apply inline-flex items-center justify-center gap-2 px-3.5 py-2 text-sm font-medium rounded-lg transition-colors disabled:opacity-50 disabled:pointer-events-none bg-primary-600 text-white hover:bg-primary-700;
+  }
+
+  .ui-btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 px-3.5 py-2 text-sm font-medium rounded-lg transition-colors disabled:opacity-50 disabled:pointer-events-none bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700;
+  }
+
+  .ui-btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 px-3.5 py-2 text-sm font-medium rounded-lg transition-colors disabled:opacity-50 disabled:pointer-events-none text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800;
+  }
+}
+
+/* Thin, theme-aware scrollbars for boards / sidebars */
+.ui-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.ui-scroll::-webkit-scrollbar-thumb {
+  background: rgb(203 213 225 / 0.9);
+  border-radius: 99px;
+}
+html.dark .ui-scroll::-webkit-scrollbar-thumb {
+  background: rgb(71 85 105 / 0.9);
 }
 
 /* —— Login stage (illustrated) —— */

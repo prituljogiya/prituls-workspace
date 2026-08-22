@@ -10,6 +10,7 @@ import {
   ChevronDown,
   KeyRound,
   LogOut,
+  Menu,
   Moon,
   Settings,
   Sun,
@@ -20,7 +21,7 @@ import {
   Shield,
 } from 'lucide-react';
 
-export function AppHeader() {
+export function AppHeader({ onMenuClick }: { onMenuClick?: () => void }) {
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [open, setOpen] = useState(false);
@@ -39,7 +40,20 @@ export function AppHeader() {
   const initials = `${user.firstName?.[0] || ''}${user.lastName?.[0] || ''}` || 'U';
 
   return (
-    <header className="sticky top-0 z-30 h-14 shrink-0 border-b border-gray-200 dark:border-gray-800 bg-white/90 dark:bg-gray-900/90 backdrop-blur px-4 flex items-center justify-end gap-2">
+    <header className="sticky top-0 z-30 h-14 shrink-0 border-b border-gray-200 dark:border-gray-800 bg-white/90 dark:bg-gray-900/90 backdrop-blur px-3 sm:px-4 flex items-center justify-between gap-2">
+      <div className="flex items-center gap-1 min-w-0">
+        {onMenuClick ? (
+          <button
+            type="button"
+            onClick={onMenuClick}
+            className="lg:hidden p-2 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
+            aria-label="Open navigation"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+        ) : null}
+      </div>
+      <div className="flex items-center justify-end gap-1 sm:gap-2">
       <RoleGuard permission="users.manage">
         <Link
           href="/admin/users"
@@ -187,6 +201,7 @@ export function AppHeader() {
             </button>
           </div>
         )}
+      </div>
       </div>
     </header>
   );

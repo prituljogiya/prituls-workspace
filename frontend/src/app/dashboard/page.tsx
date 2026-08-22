@@ -6,7 +6,6 @@ import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import api from '@/lib/api';
 import {
-  LayoutDashboard,
   FolderKanban,
   CheckCircle2,
   Clock,
@@ -16,6 +15,7 @@ import {
 } from 'lucide-react';
 import { Layout } from '@/components/Layout';
 import { RoleGuard } from '@/components/RoleGuard';
+import { PageHeader, PageSpinner, EmptyState } from '@/components/PageHeader';
 import dynamic from 'next/dynamic';
 
 const ProductivityChart = dynamic(
@@ -136,104 +136,95 @@ export default function DashboardPage() {
 
   if (loading || authLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
-      </div>
+      <Layout>
+        <PageSpinner />
+      </Layout>
     );
   }
 
   if (!data) {
-    return <div className="p-6 text-gray-900 dark:text-white">Error loading dashboard</div>;
+    return (
+      <Layout>
+        <div className="p-6 text-gray-900 dark:text-white">Error loading dashboard</div>
+      </Layout>
+    );
   }
+
+  const firstName = user?.firstName || 'there';
+  const hour = new Date().getHours();
+  const hello = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
 
   return (
     <Layout>
-      <div className="min-h-screen">
-        <header className="bg-white dark:bg-gray-800 shadow-sm border-b dark:border-gray-700 sticky top-0 z-10">
-          <div className="px-6 py-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <LayoutDashboard className="h-8 w-8 text-primary-600" />
-                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Dashboard</h1>
-              </div>
-            </div>
-          </div>
-        </header>
+      <PageHeader
+        title={`${hello}, ${firstName}`}
+        subtitle="Your projects, tasks, and progress in one place."
+        actions={
+          <RoleGuard permission="projects.create">
+            <Link href="/projects/new" className="ui-btn-primary">
+              <Plus className="h-4 w-4" />
+              New Project
+            </Link>
+          </RoleGuard>
+        }
+      />
 
-        <main className="p-6">
+        <main className="px-4 sm:px-6 pb-8">
           {/* Stats */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Tasks</p>
-                  <p className="text-3xl font-bold text-gray-900 dark:text-white mt-2">
-                    {data.stats.totalTasks}
-                  </p>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-8">
+            {[
+              { label: 'Total tasks', value: data.stats.totalTasks, icon: FolderKanban, tint: 'text-primary-600' },
+              { label: 'Completed', value: data.stats.completedTasks, icon: CheckCircle2, tint: 'text-emerald-600' },
+              { label: 'In progress', value: data.stats.inProgressTasks, icon: Clock, tint: 'text-sky-600' },
+              { label: 'Pending', value: data.stats.pendingTasks, icon: AlertCircle, tint: 'text-amber-600' },
+            ].map((stat) => {
+              const Icon = stat.icon;
+              return (
+                <div key={stat.label} className="ui-card p-4 sm:p-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                        {stat.label}
+                      </p>
+                      <p className="text-2xl sm:text-3xl font-semibold text-gray-900 dark:text-white mt-1">
+                        {stat.value}
+                      </p>
+                    </div>
+                    <Icon className={`h-8 w-8 ${stat.tint} opacity-80`} />
+                  </div>
                 </div>
-                <FolderKanban className="h-12 w-12 text-primary-500" />
-              </div>
-            </div>
-
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Completed</p>
-                  <p className="text-3xl font-bold text-green-600 dark:text-green-400 mt-2">
-                    {data.stats.completedTasks}
-                  </p>
-                </div>
-                <CheckCircle2 className="h-12 w-12 text-green-500" />
-              </div>
-            </div>
-
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600 dark:text-gray-400">In Progress</p>
-                  <p className="text-3xl font-bold text-blue-600 dark:text-blue-400 mt-2">
-                    {data.stats.inProgressTasks}
-                  </p>
-                </div>
-                <Clock className="h-12 w-12 text-blue-500" />
-              </div>
-            </div>
-
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Pending</p>
-                  <p className="text-3xl font-bold text-yellow-600 dark:text-yellow-400 mt-2">
-                    {data.stats.pendingTasks}
-                  </p>
-                </div>
-                <AlertCircle className="h-12 w-12 text-yellow-500" />
-              </div>
-            </div>
+              );
+            })}
           </div>
 
           {/* Projects */}
           <div className="mb-8">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white">My Projects</h2>
-              <RoleGuard permission="projects.create">
-                <Link
-                  href="/projects/new"
-                  className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
-                >
-                  <Plus className="h-4 w-4" />
-                  New Project
-                </Link>
-              </RoleGuard>
-            </div>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Projects</h2>
+            {data.projects.length === 0 ? (
+              <EmptyState
+                icon={FolderKanban}
+                title="No projects yet"
+                description="Create a project to start boards, tasks, and invoices."
+                action={
+                  <RoleGuard permission="projects.create">
+                    <Link href="/projects/new" className="ui-btn-primary">
+                      <Plus className="h-4 w-4" />
+                      New Project
+                    </Link>
+                  </RoleGuard>
+                }
+              />
+            ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {data.projects.map((project) => (
                 <div
                   key={project.id}
-                  className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 hover:shadow-lg transition-shadow"
+                  className="ui-card overflow-hidden hover:shadow-md hover:border-primary-200 dark:hover:border-primary-800 transition-all"
                 >
+                  <div className="h-1.5" style={{ backgroundColor: project.color || '#0ea5e9' }} />
+                  <div className="p-5">
                   <Link href={`/projects/${project.id}`}>
-                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">
                       {project.name}
                     </h3>
                     <p className="text-sm text-gray-600 dark:text-gray-400 mb-4 line-clamp-2">
@@ -265,9 +256,11 @@ export default function DashboardPage() {
                       )}
                     </div>
                   )}
+                  </div>
                 </div>
               ))}
             </div>
+            )}
           </div>
 
           {/* Project Reports Charts */}
@@ -279,14 +272,14 @@ export default function DashboardPage() {
               </h2>
             </div>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+              <div className="ui-card p-6">
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
                   Tasks by Project
                 </h3>
                 <ProductivityChart data={projectChartData} />
               </div>
 
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+              <div className="ui-card p-6">
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
                   Task Status
                 </h3>
@@ -296,7 +289,7 @@ export default function DashboardPage() {
                 />
               </div>
 
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+              <div className="ui-card p-6">
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
                   Issue Types
                 </h3>
@@ -306,7 +299,7 @@ export default function DashboardPage() {
                 />
               </div>
 
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+              <div className="ui-card p-6">
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
                   Projects Overview
                 </h3>
@@ -352,12 +345,12 @@ export default function DashboardPage() {
           </div>
 
           {/* Assigned Tasks */}
-          {data.assignedTasks.length > 0 && (
+          {data.assignedTasks?.length > 0 && (
             <div className="mb-8">
               <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">
                 My Assigned Tasks
               </h2>
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+              <div className="ui-card overflow-hidden">
                 <div className="divide-y dark:divide-gray-700">
                   {data.assignedTasks.map((task) => (
                     <Link
@@ -389,7 +382,6 @@ export default function DashboardPage() {
             </div>
           )}
         </main>
-      </div>
     </Layout>
   );
 }

@@ -47,7 +47,7 @@ export function TaskCard({ task }: TaskCardProps) {
       ref={setNodeRef}
       style={style}
       {...attributes}
-      className="bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-600 hover:shadow-md transition-all group relative"
+      className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200/80 dark:border-gray-700 hover:border-primary-300 dark:hover:border-primary-600 hover:shadow-md transition-all group relative"
     >
       {/* Drag Handle - Small area on the left for dragging */}
       <div
